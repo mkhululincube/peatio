@@ -183,10 +183,10 @@ ActiveRecord::Schema.define(version: 2020_05_27_130534) do
     t.decimal "max_price", precision: 32, scale: 16, default: "0.0", null: false
     t.decimal "min_amount", precision: 32, scale: 16, default: "0.0", null: false
     t.integer "position", default: 0, null: false
-    t.json "data"
     t.string "state", limit: 32, default: "enabled", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.json "data"
     t.index ["base_unit", "quote_unit"], name: "index_markets_on_base_unit_and_quote_unit", unique: true
     t.index ["base_unit"], name: "index_markets_on_base_unit"
     t.index ["engine_id"], name: "index_markets_on_engine_id"
@@ -262,6 +262,23 @@ ActiveRecord::Schema.define(version: 2020_05_27_130534) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["currency_id", "address"], name: "index_payment_addresses_on_currency_id_and_address", unique: true
+  end
+
+  create_table "portfolios", options: "ENGINE=InnoDB DEFAULT CHARSET=utf8", force: :cascade do |t|
+    t.integer "member_id", null: false
+    t.string "portfolio_currency_id", limit: 10, null: false
+    t.string "currency_id", limit: 10, null: false
+    t.decimal "total_credit", precision: 32, scale: 16
+    t.decimal "total_credit_fees", precision: 32, scale: 16
+    t.decimal "total_debit_fees", precision: 32, scale: 16
+    t.decimal "total_debit", precision: 32, scale: 16
+    t.decimal "total_credit_value", precision: 32, scale: 16
+    t.decimal "total_debit_value", precision: 32, scale: 16
+    t.bigint "last_liability_id"
+    t.datetime "created_at", default: -> { "CURRENT_TIMESTAMP" }, null: false
+    t.datetime "updated_at", default: -> { "CURRENT_TIMESTAMP" }, null: false
+    t.index ["last_liability_id"], name: "index_portfolios_on_last_liability_id"
+    t.index ["portfolio_currency_id", "currency_id", "member_id"], name: "index_currency_ids_and_member_id", unique: true
   end
 
   create_table "revenues", id: :integer, options: "ENGINE=InnoDB DEFAULT CHARSET=utf8", force: :cascade do |t|

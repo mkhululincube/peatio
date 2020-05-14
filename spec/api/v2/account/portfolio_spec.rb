@@ -5,73 +5,79 @@ describe API::V2::Account::Portfolio, type: :request do
   let(:token) { jwt_for(member) }
 
   describe 'GET /api/v2/account/portfolio' do
-    let!(:market) { create(:market, :ethusd) }
-    let(:btcusd_bid) do
-      create(
-        :order_bid,
-        :btcusd,
-        price: '8200'.to_d,
-        volume: '0.1',
-        member: member
-      )
-    end
+    let!(:eth) { Currency.find('eth') }
+    let!(:btc) { Currency.find('btc') }
+    let!(:portfolio1) { create(:portfolio, portfolio_currency_id: eth.id, currency_id: btc.id,
+                               total_credit: 0.1, total_credit_fees: 0.01, total_debit_fees: 0.02, total_credit_value: 0.3, total_debit: 0.2,
+                               total_debit_value: 10.0, member: member)}
 
-    let(:ethusd_bid) do
-      create(
-        :order_bid,
-        :btcusd,
-        market_id: :ethusd,
-        price: '300'.to_d,
-        volume: '1.2',
-        member: member
-      )
-    end
+    let!(:portfolio2) { create(:portfolio, portfolio_currency_id: btc.id, currency_id: eth.id,
+                                total_credit: 0.1, total_credit_fees: 0.01, total_debit_fees: 0.02, total_credit_value: 0.3, total_debit: 0.2,
+                                total_debit_value: 10.0, member: member)}
 
-    let(:btcusd_ask) do
-      create(
-        :order_ask,
-        :btcusd,
-        price: '8200'.to_d,
-        volume: '0.1',
-        member: member
-      )
-    end
+    it 'returns all user portfolios for all portfolio currencies' do
+      api_get '/api/v2/account/portfolio', token: token
 
-    let(:ethusd_ask) do
-      create(
-        :order_ask,
-        :btcusd,
-        market_id: :ethusd,
-        price: '300'.to_d,
-        volume: '1.2',
-        member: member
-      )
-    end
-
-    let!(:ethusd_trade) { create(:trade, :btcusd, price: 300, amount: 1.2, market_id: :ethusd, maker_order: ethusd_ask, taker_order: ethusd_bid) }
-    let!(:btcusd_trade) { create(:trade, :btcusd, price: 8200, amount: 0.1, maker_order: btcusd_ask, taker_order: btcusd_bid) }
-
-    let(:btcusd_pa) { { 'base_unit' => 'btc', 'price' => '8200.0', 'total' => '820.0' } }
-    let(:ethusd_pa) { { 'base_unit' => 'eth', 'price' => '300.0', 'total' => '360.0' } }
-
-    it 'returns error if invalid quote unit' do
-      api_get '/api/v2/account/portfolio?quote_unit=xrp', token: token
-      expect(response).to have_http_status 422
-      expect(response).to include_api_error('account.portfolio.quote_unit_doesnt_exist')
-    end
-
-    it 'returns [] for markets without user trade activity' do
-      api_get '/api/v2/account/portfolio?quote_unit=eth', token: token
       expect(response).to be_successful
-      expect(response_body).to eq([])
+
+      expect(response_body.count).to eq 2
+      expect(response_body[0]['currency']).to eq(portfolio1.currency_id)
+      expect(response_body[0]['portfolio_currency']).to eq(portfolio1.portfolio_currency_id)
+      expect(response_body[0]['total_credit'].to_f).to eq(portfolio1.total_credit)
+      expect(response_body[0]['total_credit_value'].to_f).to eq(portfolio1.total_credit_value)
+      expect(response_body[0]['total_debit'].to_f).to eq(portfolio1.total_debit)
+      expect(response_body[0]['total_debit_value'].to_f).to eq(portfolio1.total_debit_value)
+      expect(response_body[0]['average_buy_price'].to_f.round(9)).to eq( (portfolio1.total_credit_value / (portfolio1.total_credit)).to_f)
+      expect(response_body[0]['average_sell_price'].to_f.round(9)).to eq(portfolio1.total_debit_value / (portfolio1.total_debit))
+
+      expect(response_body[1]['currency']).to eq(portfolio2.currency_id)
+      expect(response_body[1]['portfolio_currency']).to eq(portfolio2.portfolio_currency_id)
+      expect(response_body[1]['total_credit'].to_f).to eq(portfolio2.total_credit)
+      expect(response_body[1]['total_credit_value'].to_f).to eq(portfolio2.total_credit_value)
+      expect(response_body[1]['total_debit'].to_f).to eq(portfolio2.total_debit)
+      expect(response_body[1]['total_debit_value'].to_f).to eq(portfolio2.total_debit_value)
+      expect(response_body[1]['average_buy_price'].to_f.round(9)).to eq( (portfolio2.total_credit_value / (portfolio2.total_credit)).to_f)
+      expect(response_body[1]['average_sell_price'].to_f.round(9)).to eq(portfolio2.total_debit_value / (portfolio2.total_debit))
     end
 
-    it 'returns price of acquisition and total for markets with usd quote' do
-      api_get '/api/v2/account/portfolio?quote_unit=usd', token: token
+    it 'returns user portfolios for portfolio currency eth' do
+      api_get '/api/v2/account/portfolio?portfolio_currency=eth', token: token
+
       expect(response).to be_successful
-      [btcusd_pa, ethusd_pa].each do |bu|
-        expect(response_body.find { |pa| pa['base_unit'] == bu['base_unit'] }).to eq bu
+
+      expect(response_body.count).to eq 1
+      expect(response_body[0]['currency']).to eq(portfolio1.currency_id)
+      expect(response_body[0]['portfolio_currency']).to eq(portfolio1.portfolio_currency_id)
+      expect(response_body[0]['total_credit'].to_f).to eq(portfolio1.total_credit)
+      expect(response_body[0]['total_credit_value'].to_f).to eq(portfolio1.total_credit_value)
+      expect(response_body[0]['total_debit'].to_f).to eq(portfolio1.total_debit)
+      expect(response_body[0]['total_debit_value'].to_f).to eq(portfolio1.total_debit_value)
+      expect(response_body[0]['average_buy_price'].to_f.round(9)).to eq( (portfolio1.total_credit_value / (portfolio1.total_credit)).to_f)
+      expect(response_body[0]['average_sell_price'].to_f.round(9)).to eq(portfolio1.total_debit_value / (portfolio1.total_debit))
+    end
+
+    context 'avarage sell price equal to 0' do
+      let!(:usd) { Currency.find('usd') }
+      let!(:portfolio) { create(:portfolio, portfolio_currency_id: usd.id, currency_id: btc.id,
+                                  total_credit: 0.1, total_credit_fees: 0.01, total_debit_fees: 0.0, total_credit_value: 0.3, total_debit: 0.0,
+                                  total_debit_value: 0.0, member: member)}
+
+      it 'return user portfolio with zero avarage sell price' do
+        api_get '/api/v2/account/portfolio?portfolio_currency=usd', token: token
+
+        expect(response).to be_successful
+
+        expect(response_body.count).to eq 1
+        expect(response_body[0]['currency']).to eq(portfolio.currency_id)
+        expect(response_body[0]['portfolio_currency']).to eq(portfolio.portfolio_currency_id)
+        expect(response_body[0]['total_credit'].to_f).to eq(portfolio.total_credit)
+        expect(response_body[0]['total_credit_value'].to_f).to eq(portfolio.total_credit_value)
+        expect(response_body[0]['total_debit'].to_f).to eq(portfolio.total_debit)
+        expect(response_body[0]['total_debit_value'].to_f).to eq(portfolio.total_debit_value)
+        expect(response_body[0]['average_buy_price'].to_f.round(9)).to eq( (portfolio.total_credit_value / (portfolio.total_credit)).to_f)
+        expect(response_body[0]['average_sell_price'].to_f.round(9)).to eq 0
       end
     end
+
   end
 end

@@ -9,6 +9,7 @@ class Member < ApplicationRecord
 
   has_many :orders
   has_many :accounts
+  has_many :portfolios
   has_many :payment_addresses, through: :accounts
   has_many :withdraws, -> { order(id: :desc) }
   has_many :deposits, -> { order(id: :desc) }
