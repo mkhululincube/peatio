@@ -1,15 +1,15 @@
 class WalletService
   attr_reader :wallet, :adapter
 
-  def initialize(wallet)
+  def initialize(wallet, currency)
     @wallet = wallet
     @adapter = Peatio::Wallet.registry[wallet.gateway.to_sym].new(wallet.settings.symbolize_keys)
     @adapter.configure(wallet: @wallet.to_wallet_api_settings,
-                       currency: @wallet.currency.to_blockchain_api_settings)
+                       currency: currency.to_blockchain_api_settings)
   end
 
-  def create_address!(account, pa_details)
-    @adapter.create_address!(uid: account.member.uid, pa_details: pa_details)
+  def create_address!(uid, pa_details)
+    @adapter.create_address!(uid: uid, pa_details: pa_details)
   end
 
   def build_withdrawal!(withdrawal)

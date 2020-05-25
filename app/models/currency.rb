@@ -30,6 +30,7 @@ class Currency < ApplicationRecord
   # == Relationships ========================================================
 
   belongs_to :blockchain, foreign_key: :blockchain_key, primary_key: :key
+  has_and_belongs_to_many :wallets
 
   # == Validations ==========================================================
 

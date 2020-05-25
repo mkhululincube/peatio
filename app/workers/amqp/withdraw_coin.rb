@@ -63,7 +63,7 @@ module Workers
           @logger.warn id: withdraw.id,
                        message: 'Sending request to Wallet Service.'
 
-          wallet_service = WalletService.new(wallet)
+          wallet_service = WalletService.new(wallet, withdraw.currency_id)
           transaction = wallet_service.build_withdrawal!(withdraw)
 
           @logger.warn id: withdraw.id,
