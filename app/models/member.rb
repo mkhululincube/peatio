@@ -85,7 +85,13 @@ class Member < ApplicationRecord
     trades.each(&:revert_trade!)
   end
 
-private
+  def payment_address(wallet_id)
+    wallet = Wallet.find(wallet_id)
+
+    PaymentAddress.find_by(member: self, wallet: wallet)&.enqueue_address_generation || payment_addresses.create!(wallet: wallet)
+  end
+
+  private
 
   def downcase_email
     self.email = email.try(:downcase)

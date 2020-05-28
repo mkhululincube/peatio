@@ -61,7 +61,7 @@ class BlockchainService
   private
 
   def filter_deposits(block)
-    addresses = PaymentAddress.where(currency: @currencies, address: block.transactions.map(&:to_address)).pluck(:address)
+    addresses = PaymentAddress.where(wallet: Wallet.deposit.joins(:currencies).where(currencies: { id: @currencies }), address: block.transactions.map(&:to_address)).pluck(:address)
     block.select { |transaction| transaction.to_address.in?(addresses) }
   end
 
@@ -86,7 +86,8 @@ class BlockchainService
     return unless transaction.status.success?
 
     # TODO: Rewrite this guard clause
-    return unless PaymentAddress.exists?(currency_id: transaction.currency_id, address: transaction.to_address)
+    address = PaymentAddress.find_by(wallet: Wallet.deposit.joins(:currencies).find_by(currencies: { id: @currencies }), address: transaction.to_address)
+    return if address.blank?
 
     deposit =
       Deposits::Coin.find_or_create_by!(
@@ -96,7 +97,7 @@ class BlockchainService
       ) do |d|
         d.address = transaction.to_address
         d.amount = transaction.amount
-        d.member = PaymentAddress.find_by(currency_id: transaction.currency_id, address: transaction.to_address).account.member
+        d.member = address.member
         d.block_number = transaction.block_number
       end
 

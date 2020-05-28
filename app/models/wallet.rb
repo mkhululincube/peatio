@@ -97,7 +97,7 @@ class Wallet < ApplicationRecord
   end
 
   def current_balance
-    WalletService.new(self, currencies.first).load_balance!
+    WalletService.new(self).load_balance!
   rescue StandardError => e
     report_exception(e)
     NOT_AVAILABLE
@@ -112,7 +112,7 @@ class Wallet < ApplicationRecord
   end
 
   def service
-    ::WalletService.new(self, currencies.first)
+    ::WalletService.new(self)
   end
 end
 

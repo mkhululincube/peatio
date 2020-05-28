@@ -1,27 +1,32 @@
 class WalletService
   attr_reader :wallet, :adapter
 
-  def initialize(wallet, currency)
+  def initialize(wallet)
     @wallet = wallet
-    @adapter = Peatio::Wallet.registry[wallet.gateway.to_sym].new(wallet.settings.symbolize_keys)
-    @adapter.configure(wallet: @wallet.to_wallet_api_settings,
-                       currency: currency.to_blockchain_api_settings)
+    @adapter = Peatio::Wallet.registry[wallet.gateway.to_sym].new
   end
 
   def create_address!(uid, pa_details)
+    @adapter.configure(wallet:   @wallet.to_wallet_api_settings,
+                       currency: @wallet.currencies.first.to_blockchain_api_settings)
     @adapter.create_address!(uid: uid, pa_details: pa_details)
   end
 
   def build_withdrawal!(withdrawal)
+    @adapter.configure(wallet:   @wallet.to_wallet_api_settings,
+                       currency: withdrawal.currency.first.to_blockchain_api_settings)
     transaction = Peatio::Transaction.new(to_address: withdrawal.rid,
                                           amount:     withdrawal.amount)
     @adapter.create_transaction!(transaction)
   end
 
   def spread_deposit(deposit)
+    @adapter.configure(wallet:   @wallet.to_wallet_api_settings,
+                       currency: deposit.currency.first.to_blockchain_api_settings)
+
     destination_wallets =
       Wallet.active.withdraw.ordered
-        .where(currency_id: deposit.currency_id)
+        .joins(:currencies).where(currencies: { id: depoist.currency_id })
         .map do |w|
         # NOTE: Consider min_collection_amount is defined per wallet.
         #       For now min_collection_amount is currency config.
@@ -48,6 +53,8 @@ class WalletService
 
   # TODO: We don't need deposit_spread anymore.
   def collect_deposit!(deposit, deposit_spread)
+    @adapter.configure(wallet:   @wallet.to_wallet_api_settings,
+                       currency: deposit.currency.first.to_blockchain_api_settings)
     pa = deposit.account.payment_address
     # NOTE: Deposit wallet configuration is tricky because wallet UIR
     #       is saved on Wallet model but wallet address and secret
@@ -64,6 +71,8 @@ class WalletService
 
   # TODO: We don't need deposit_spread anymore.
   def deposit_collection_fees!(deposit, deposit_spread)
+    @adapter.configure(wallet:   @wallet.to_wallet_api_settings,
+                       currency: deposit.currency.first.to_blockchain_api_settings)
     deposit_transaction = Peatio::Transaction.new(hash:         deposit.txid,
                                                   txout:        deposit.txout,
                                                   to_address:   deposit.address,
@@ -77,7 +86,11 @@ class WalletService
   end
 
   def load_balance!
-    @adapter.load_balance!
+    @wallet.currency_id.each_with_object({}) do |currency, balances|
+      @adapter.configure(wallet:   @wallet.to_wallet_api_settings,
+                         currency: currency)
+      balances[currency] = @adapter.load_balance!
+    end
   rescue Peatio::Wallet::Error => e
     report_exception(e)
     BlockchainService.new(wallet.blockchain).load_balance!(@wallet.address, @wallet.currency_id)

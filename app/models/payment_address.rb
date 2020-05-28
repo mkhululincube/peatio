@@ -29,7 +29,7 @@ class PaymentAddress < ApplicationRecord
   end
 
   def blockchain_api
-    BlockchainService.new(wallet.blockchain, wallet.currencies.first)
+    BlockchainService.new(wallet.blockchain)
   rescue StandardError
     return
   end

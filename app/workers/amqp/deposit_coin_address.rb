@@ -5,7 +5,6 @@ module Workers
   module AMQP
     class DepositCoinAddress < Base
       def process(payload)
-        binding.pry
         payload.symbolize_keys!
 
         member = Member.find_by_id(payload[:member_id])
@@ -20,19 +19,20 @@ module Workers
           return
         end
 
-        wallet_service = WalletService.new(wallet, deposit.currency_id)
+        wallet_service = WalletService.new(wallet)
 
-        pa = PaymentAddress.find_by(member_id: member.id, wallet_id: wallet.id)
-        pa.with_lock do
-          next if pa.address.present?
+        member.payment_address(wallet.id).tap do |pa|
+          pa.with_lock do
+            next if pa.address.present?
 
-          # Supply address ID in case of BitGo address generation if it exists.
-          result = wallet_service.create_address!(member.uid, pa.details.merge(updated_at: pa.updated_at))
+            # Supply address ID in case of BitGo address generation if it exists.
+            result = wallet_service.create_address!(member.uid, pa.details.merge(updated_at: pa.updated_at))
 
-          if result.present?
-            pa.update!(address: result[:address],
-                       secret:  result[:secret],
-                       details: result.fetch(:details, {}).merge(pa.details))
+            if result.present?
+              pa.update!(address: result[:address],
+                        secret:  result[:secret],
+                        details: result.fetch(:details, {}).merge(pa.details))
+            end
           end
         end
 
