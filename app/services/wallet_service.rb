@@ -14,7 +14,7 @@ class WalletService
 
   def build_withdrawal!(withdrawal)
     @adapter.configure(wallet:   @wallet.to_wallet_api_settings,
-                       currency: withdrawal.currency.first.to_blockchain_api_settings)
+                       currency: withdrawal.currency.to_blockchain_api_settings)
     transaction = Peatio::Transaction.new(to_address: withdrawal.rid,
                                           amount:     withdrawal.amount)
     @adapter.create_transaction!(transaction)
@@ -22,11 +22,11 @@ class WalletService
 
   def spread_deposit(deposit)
     @adapter.configure(wallet:   @wallet.to_wallet_api_settings,
-                       currency: deposit.currency.first.to_blockchain_api_settings)
+                       currency: deposit.currency.to_blockchain_api_settings)
 
     destination_wallets =
       Wallet.active.withdraw.ordered
-        .joins(:currencies).where(currencies: { id: depoist.currency_id })
+        .joins(:currencies).where(currencies: { id: deposit.currency_id })
         .map do |w|
         # NOTE: Consider min_collection_amount is defined per wallet.
         #       For now min_collection_amount is currency config.
@@ -48,14 +48,14 @@ class WalletService
     # (except the last one see previous comment).
     destination_wallets.reject! { |dw| dw[:balance] == Wallet::NOT_AVAILABLE }
 
-    spread_between_wallets(deposit.amount, destination_wallets)
+    spread_between_wallets(deposit, destination_wallets)
   end
 
   # TODO: We don't need deposit_spread anymore.
   def collect_deposit!(deposit, deposit_spread)
     @adapter.configure(wallet:   @wallet.to_wallet_api_settings,
-                       currency: deposit.currency.first.to_blockchain_api_settings)
-    pa = deposit.account.payment_address
+                       currency: deposit.currency.to_blockchain_api_settings)
+    pa = deposit.member.payment_address(@wallet.id)
     # NOTE: Deposit wallet configuration is tricky because wallet UIR
     #       is saved on Wallet model but wallet address and secret
     #       are saved in PaymentAddress.
@@ -72,7 +72,7 @@ class WalletService
   # TODO: We don't need deposit_spread anymore.
   def deposit_collection_fees!(deposit, deposit_spread)
     @adapter.configure(wallet:   @wallet.to_wallet_api_settings,
-                       currency: deposit.currency.first.to_blockchain_api_settings)
+                       currency: deposit.currency.to_blockchain_api_settings)
     deposit_transaction = Peatio::Transaction.new(hash:         deposit.txid,
                                                   txout:        deposit.txout,
                                                   to_address:   deposit.address,
@@ -116,7 +116,8 @@ class WalletService
 
   # @return [Array<Peatio::Transaction>] result of spread in form of
   # transactions array with amount and to_address defined.
-  def spread_between_wallets(original_amount, destination_wallets)
+  def spread_between_wallets(deposit, destination_wallets)
+    original_amount = deposit.amount
     if original_amount < destination_wallets.pluck(:min_collection_amount).min
       return []
     end

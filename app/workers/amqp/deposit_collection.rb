@@ -26,14 +26,13 @@ module Workers
             Rails.logger.warn { "The deposit was spreaded in the next way: #{deposit.spread}"}
           end
 
-          wallet = Wallet.active.deposit.find_by(currency_id: deposit.currency_id)
+          wallet = deposit.deposit_wallet
 
           unless wallet
             Rails.logger.warn { "Can't find active deposit wallet for currency with code: #{deposit.currency_id}."}
             return
           end
           Rails.logger.warn { "Starting collecting deposit with id: #{deposit.id}." }
-
 
           transactions = WalletService.new(wallet).collect_deposit!(deposit, deposit.spread_to_transactions)
 
