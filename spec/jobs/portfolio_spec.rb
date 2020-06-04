@@ -1,8 +1,35 @@
-# encoding: UTF-8
 # frozen_string_literal: true
 
 describe Jobs::Cron::Portfolio do
-  let(:member) { create(:member, :level_3) }
+  let!(:member_platform) { create(:member, :level_3) }
+  let!(:member) { create(:member, :level_3) }
+
+  include ::API::V2::Management::Helpers
+
+  def create_transfer(transfer_attrs)
+    Transfer.transaction do
+      transfer = Transfer.create!(transfer_attrs.slice(:key, :category, :description))
+      transfer_attrs[:operations].map do |op_pair|
+        shared_params = {
+          currency: op_pair[:currency],
+          reference: transfer
+        }
+
+        debit_params = op_pair[:account_src]
+                       .merge(debit: op_pair[:amount])
+                       .merge(shared_params)
+                       .compact
+
+        credit_params = op_pair[:account_dst]
+                        .merge(credit: op_pair[:amount])
+                        .merge(shared_params)
+                        .compact
+
+        create_operation!(debit_params)
+        create_operation!(credit_params)
+      end
+    end
+  end
 
   context 'conversion_market' do
     it 'when there is no market' do
@@ -18,7 +45,7 @@ describe Jobs::Cron::Portfolio do
   end
 
   context 'price_at' do
-    after { delete_measurments("trades") }
+    after { delete_measurments('trades') }
 
     let!(:coin_deposit) { create(:deposit, :deposit_btc) }
     let!(:liability) { create(:liability, member: member, credit: 0.4, reference_type: 'Deposit', reference_id: coin_deposit.id) }
@@ -31,7 +58,7 @@ describe Jobs::Cron::Portfolio do
     end
 
     context 'when trade exist' do
-      let(:trade) { create(:trade, :btceth, price: '5.0'.to_d, amount: '1.9'.to_d, total: '5.5'.to_d)}
+      let(:trade) { create(:trade, :btceth, price: '5.0'.to_d, amount: '1.9'.to_d, total: '5.5'.to_d) }
 
       before do
         trade.write_to_influx
@@ -51,13 +78,13 @@ describe Jobs::Cron::Portfolio do
 
   context 'process_deposit' do
     let!(:coin_deposit) { create(:deposit, :deposit_btc) }
-    let!(:fiat_deposit){ create(:deposit_usd) }
+    let!(:fiat_deposit) { create(:deposit_usd) }
 
     let!(:liability1) { create(:liability, member: member, credit: 0.4, reference_type: 'Deposit', reference_id: coin_deposit.id) }
     let!(:liability2) { create(:liability, member: member, credit: 1000.0, reference_type: 'Deposit', reference_id: fiat_deposit.id) }
 
-    let(:trade1) { create(:trade, :btceth, price: '5.0'.to_d, amount: '1.9'.to_d, total: '5.5'.to_d)}
-    let(:trade2) { create(:trade, :btcusd, price: '100.0'.to_d, amount: '0.4'.to_d, total: '1.5'.to_d)}
+    let(:trade1) { create(:trade, :btceth, price: '5.0'.to_d, amount: '1.9'.to_d, total: '5.5'.to_d) }
+    let(:trade2) { create(:trade, :btcusd, price: '100.0'.to_d, amount: '0.4'.to_d, total: '1.5'.to_d) }
 
     context 'coin deposit' do
       before do
@@ -107,13 +134,13 @@ describe Jobs::Cron::Portfolio do
     end
 
     let!(:coin_withdraw) { create(:btc_withdraw, sum: 0.3.to_d, member: member, aasm_state: 'succeed') }
-    let!(:fiat_withdraw){ create(:usd_withdraw, sum: 100.to_d, member: member, aasm_state: 'succeed') }
+    let!(:fiat_withdraw) { create(:usd_withdraw, sum: 100.to_d, member: member, aasm_state: 'succeed') }
 
     let!(:liability1) { create(:liability, member: member, debit: 0.3, reference_type: 'Withdraw', reference_id: coin_withdraw.id) }
     let!(:liability2) { create(:liability, member: member, debit: 100.0, reference_type: 'Withdraw', reference_id: fiat_withdraw.id) }
 
-    let(:trade1) { create(:trade, :btceth, price: '5.0'.to_d, amount: '1.9'.to_d, total: '5.5'.to_d)}
-    let(:trade2) { create(:trade, :btcusd, price: '100.0'.to_d, amount: '0.4'.to_d, total: '1.5'.to_d)}
+    let(:trade1) { create(:trade, :btceth, price: '5.0'.to_d, amount: '1.9'.to_d, total: '5.5'.to_d) }
+    let(:trade2) { create(:trade, :btcusd, price: '100.0'.to_d, amount: '0.4'.to_d, total: '1.5'.to_d) }
 
     context 'coin withdraw' do
       before do
@@ -161,9 +188,9 @@ describe Jobs::Cron::Portfolio do
   end
 
   context 'process_order' do
-    let!(:trade_eth) { create(:trade, :btceth, price: '1.0'.to_d, amount: '0.3'.to_d, total: '5.5'.to_d)}
+    let!(:trade_eth) { create(:trade, :btceth, price: '1.0'.to_d, amount: '0.3'.to_d, total: '5.5'.to_d) }
 
-    let!(:trade) { create(:trade, :btcusd, price: '5.0'.to_d, amount: '1.1'.to_d, total: '5.5'.to_d)}
+    let!(:trade) { create(:trade, :btcusd, price: '5.0'.to_d, amount: '1.1'.to_d, total: '5.5'.to_d) }
     let!(:liability) { create(:liability, member: member, credit: 0.4, reference_type: 'Trade', reference_id: trade.id) }
 
     before do
@@ -206,13 +233,13 @@ describe Jobs::Cron::Portfolio do
         result = Jobs::Cron::Portfolio.process_order(trade_eth.market.quote_unit, liability.id, trade, trade.maker_order)
 
         res1 = result[0].split(/[(,)]/)
-        total_fees =  trade.total * trade.order_fee(trade.maker_order)
+        total_fees = trade.total * trade.order_fee(trade.maker_order)
         expect(res1[1].to_i).to eq trade.maker_order.member.id
         expect(res1[2]).to eq "'#{trade_eth.market.quote_unit}'"
         expect(res1[3]).to eq "'#{trade.maker_order.income_currency.id}'"
         expect(res1[4].to_f).to eq trade.total - total_fees
         expect(res1[5].to_f).to eq total_fees
-        expect(res1[6].to_f).to eq (trade.total - total_fees)* trade_eth.price
+        expect(res1[6].to_f).to eq (trade.total - total_fees) * trade_eth.price
         expect(res1[7].to_i).to eq liability.id
         expect(res1[8].to_f).to eq 0
         expect(res1[9].to_f).to eq 0
@@ -233,9 +260,9 @@ describe Jobs::Cron::Portfolio do
     end
 
     context 'market quote unit is equal to porfolio' do
-      let!(:trade_eth) { create(:trade, :btceth, price: '1.0'.to_d, amount: '0.3'.to_d, total: '5.5'.to_d)}
+      let!(:trade_eth) { create(:trade, :btceth, price: '1.0'.to_d, amount: '0.3'.to_d, total: '5.5'.to_d) }
 
-      let!(:trade) { create(:trade, :btceth, price: '5.0'.to_d, amount: '1.1'.to_d, total: '5.5'.to_d)}
+      let!(:trade) { create(:trade, :btceth, price: '5.0'.to_d, amount: '1.1'.to_d, total: '5.5'.to_d) }
       let!(:liability) { create(:liability, member: member, credit: 0.4, reference_type: 'Trade', reference_id: trade.id) }
 
       before do
@@ -278,7 +305,7 @@ describe Jobs::Cron::Portfolio do
           result = Jobs::Cron::Portfolio.process_order(trade.market.quote_unit, liability.id, trade, trade.maker_order)
 
           res1 = result[0].split(/[(,)]/)
-          total_fees =  trade.total * trade.order_fee(trade.maker_order)
+          total_fees = trade.total * trade.order_fee(trade.maker_order)
           expect(res1[1].to_i).to eq trade.maker_order.member.id
           expect(res1[2]).to eq "'#{trade.market.quote_unit}'"
           expect(res1[3]).to eq "'#{trade.maker_order.income_currency.id}'"
@@ -303,7 +330,6 @@ describe Jobs::Cron::Portfolio do
           expect(res2[10].to_f).to eq 0
         end
       end
-
     end
   end
 
@@ -320,18 +346,20 @@ describe Jobs::Cron::Portfolio do
 
       context 'creates one portfolio' do
         let!(:coin_withdraw) { create(:btc_withdraw, sum: 0.3.to_d, amount: 0.2.to_d, aasm_state: 'succeed', member: member) }
-        let!(:portfolio) { create(:portfolio, last_liability_id: 1)}
-        let!(:trade_btceth) { create(:trade, :btceth, price: '1.0'.to_d, amount: '0.3'.to_d, total: '5.5'.to_d)}
+        let!(:portfolio) { create(:portfolio, last_liability_id: 1) }
+        let!(:trade_btceth) { create(:trade, :btceth, price: '1.0'.to_d, amount: '0.3'.to_d, total: '5.5'.to_d) }
 
-        let!(:liability) { create(:liability, id: 2, member: member, debit: 190.0, currency_id: coin_withdraw.currency_id,
-                                   reference_type: 'Withdraw', code: 212, reference_id: coin_withdraw.id) }
+        let!(:liability) do
+          create(:liability, id: 2, member: member, debit: 190.0, currency_id: coin_withdraw.currency_id,
+                             reference_type: 'Withdraw', code: 212, reference_id: coin_withdraw.id)
+        end
 
         before do
           Jobs::Cron::Portfolio.stubs(:price_at).returns(trade_btceth.price.to_f)
         end
 
         it do
-          expect{ Jobs::Cron::Portfolio.process_currency(trade_btceth.market.quote_unit) }.to change{ Portfolio.count }.by(1)
+          expect { Jobs::Cron::Portfolio.process_currency(trade_btceth.market.quote_unit) }.to change { Portfolio.count }.by(1)
 
           expect(Portfolio.last.member_id).to eq coin_withdraw.member_id
           expect(Portfolio.last.currency_id).to eq coin_withdraw.currency_id
@@ -348,18 +376,22 @@ describe Jobs::Cron::Portfolio do
 
       context 'calculation on existing portfolio' do
         let!(:coin_withdraw) { create(:btc_withdraw, amount: 0.2.to_d, aasm_state: 'succeed', member: member) }
-        let!(:trade_btceth) { create(:trade, :btceth, price: '1.0'.to_d, amount: '0.3'.to_d, total: '5.5'.to_d)}
-        let!(:portfolio) { create(:portfolio, currency_id: coin_withdraw.currency_id,  portfolio_currency_id: trade_btceth.market.quote_unit, total_debit: 0.1,
-                                   total_debit_fees: 0.01, total_debit_value: 0.3, member_id: coin_withdraw.member_id, last_liability_id: 1)}
-        let!(:liability) { create(:liability, id: 2, member_id: coin_withdraw.member_id, currency_id: coin_withdraw.currency_id,
-                                   debit: 0.3, reference_type: 'Withdraw', code: 212, reference_id: coin_withdraw.id) }
+        let!(:trade_btceth) { create(:trade, :btceth, price: '1.0'.to_d, amount: '0.3'.to_d, total: '5.5'.to_d) }
+        let!(:portfolio) do
+          create(:portfolio, currency_id: coin_withdraw.currency_id, portfolio_currency_id: trade_btceth.market.quote_unit, total_debit: 0.1,
+                             total_debit_fees: 0.01, total_debit_value: 0.3, member_id: coin_withdraw.member_id, last_liability_id: 1)
+        end
+        let!(:liability) do
+          create(:liability, id: 2, member_id: coin_withdraw.member_id, currency_id: coin_withdraw.currency_id,
+                             debit: 0.3, reference_type: 'Withdraw', code: 212, reference_id: coin_withdraw.id)
+        end
 
         before do
           Jobs::Cron::Portfolio.stubs(:price_at).returns(trade_btceth.price.to_f)
         end
 
         it do
-          expect{ Jobs::Cron::Portfolio.process_currency(trade_btceth.market.quote_unit) }.to change{ Portfolio.count }.by(0)
+          expect { Jobs::Cron::Portfolio.process_currency(trade_btceth.market.quote_unit) }.to change { Portfolio.count }.by(0)
 
           expect(Portfolio.last.member_id).to eq coin_withdraw.member_id
           expect(Portfolio.last.currency_id).to eq coin_withdraw.currency_id
@@ -376,11 +408,10 @@ describe Jobs::Cron::Portfolio do
     end
 
     context 'reference type deposit' do
-
       context 'creates one portfolio' do
         let!(:coin_deposit) { create(:deposit, :deposit_btc) }
-        let!(:portfolio) { create(:portfolio, last_liability_id: 1)}
-        let!(:trade_btceth) { create(:trade, :btceth, price: '1.0'.to_d, amount: '0.3'.to_d, total: '5.5'.to_d)}
+        let!(:portfolio) { create(:portfolio, last_liability_id: 1) }
+        let!(:trade_btceth) { create(:trade, :btceth, price: '1.0'.to_d, amount: '0.3'.to_d, total: '5.5'.to_d) }
 
         let!(:liability) { create(:liability, id: 2, member: member, credit: 190.0, reference_type: 'Deposit', reference_id: coin_deposit.id) }
 
@@ -389,7 +420,7 @@ describe Jobs::Cron::Portfolio do
         end
 
         it do
-          expect{ Jobs::Cron::Portfolio.process_currency(trade_btceth.market.quote_unit) }.to change{ Portfolio.count }.by(1)
+          expect { Jobs::Cron::Portfolio.process_currency(trade_btceth.market.quote_unit) }.to change { Portfolio.count }.by(1)
           expect(Portfolio.last.member_id).to eq coin_deposit.member_id
           expect(Portfolio.last.currency_id).to eq coin_deposit.currency_id
           expect(Portfolio.last.portfolio_currency_id).to eq trade_btceth.market.quote_unit
@@ -406,8 +437,8 @@ describe Jobs::Cron::Portfolio do
       context 'creates several portfolios' do
         let!(:coin_deposit) { create(:deposit, :deposit_btc) }
         let!(:fiat_deposit) { create(:deposit_usd) }
-        let!(:portfolio) { create(:portfolio, last_liability_id: 1)}
-        let!(:trade_btceth) { create(:trade, :btceth, price: '1.0'.to_d, amount: '0.3'.to_d, total: '5.5'.to_d)}
+        let!(:portfolio) { create(:portfolio, last_liability_id: 1) }
+        let!(:trade_btceth) { create(:trade, :btceth, price: '1.0'.to_d, amount: '0.3'.to_d, total: '5.5'.to_d) }
 
         let!(:liability1) { create(:liability, id: 2, member: member, credit: 190.0, reference_type: 'Deposit', reference_id: coin_deposit.id) }
         let!(:liability2) { create(:liability, id: 3, member: member, credit: 190.0, reference_type: 'Deposit', reference_id: fiat_deposit.id) }
@@ -417,7 +448,7 @@ describe Jobs::Cron::Portfolio do
         end
 
         it do
-          expect{ Jobs::Cron::Portfolio.process_currency(trade_btceth.market.quote_unit) }.to change{ Portfolio.count }.by(2)
+          expect { Jobs::Cron::Portfolio.process_currency(trade_btceth.market.quote_unit) }.to change { Portfolio.count }.by(2)
 
           expect(Portfolio.second.member_id).to eq coin_deposit.member_id
           expect(Portfolio.second.portfolio_currency_id).to eq trade_btceth.market.quote_unit
@@ -445,9 +476,11 @@ describe Jobs::Cron::Portfolio do
 
       context 'calculation on existing portfolio' do
         let!(:coin_deposit) { create(:deposit, :deposit_btc) }
-        let!(:trade_btceth) { create(:trade, :btceth, price: '1.0'.to_d, amount: '0.3'.to_d, total: '5.5'.to_d)}
-        let!(:portfolio) { create(:portfolio, currency_id: coin_deposit.currency_id,  portfolio_currency_id: trade_btceth.market.quote_unit, total_credit: 0.1, 
-                                  total_credit_fees: 0.01, total_credit_value: 0.3, member_id: coin_deposit.member_id, last_liability_id: 1)}
+        let!(:trade_btceth) { create(:trade, :btceth, price: '1.0'.to_d, amount: '0.3'.to_d, total: '5.5'.to_d) }
+        let!(:portfolio) do
+          create(:portfolio, currency_id: coin_deposit.currency_id, portfolio_currency_id: trade_btceth.market.quote_unit, total_credit: 0.1,
+                             total_credit_fees: 0.01, total_credit_value: 0.3, member_id: coin_deposit.member_id, last_liability_id: 1)
+        end
         let!(:liability) { create(:liability, id: 2, member_id: coin_deposit.member_id, credit: 190.0, reference_type: 'Deposit', reference_id: coin_deposit.id) }
 
         before do
@@ -455,7 +488,7 @@ describe Jobs::Cron::Portfolio do
         end
 
         it do
-          expect{ Jobs::Cron::Portfolio.process_currency(trade_btceth.market.quote_unit) }.to change{ Portfolio.count }.by(0)
+          expect { Jobs::Cron::Portfolio.process_currency(trade_btceth.market.quote_unit) }.to change { Portfolio.count }.by(0)
           expect(Portfolio.last.member_id).to eq coin_deposit.member_id
           expect(Portfolio.last.portfolio_currency_id).to eq trade_btceth.market.quote_unit
           expect(Portfolio.last.currency_id).to eq coin_deposit.currency_id
@@ -464,7 +497,7 @@ describe Jobs::Cron::Portfolio do
           expect(Portfolio.last.total_credit_fees).to eq (coin_deposit.fee + portfolio.total_credit_fees)
           expect(Portfolio.last.total_debit).to eq portfolio.total_debit
           expect(Portfolio.last.total_debit_value).to eq portfolio.total_debit_value
-          expect(Portfolio.last.total_credit_value).to eq coin_deposit.amount * trade_btceth.price +  portfolio.total_credit_value
+          expect(Portfolio.last.total_credit_value).to eq coin_deposit.amount * trade_btceth.price + portfolio.total_credit_value
           expect(Portfolio.last.last_liability_id).to eq liability.id
         end
       end
@@ -472,24 +505,32 @@ describe Jobs::Cron::Portfolio do
 
     context 'reference type trade' do
       context 'calculation on existing portfolio' do
-        let!(:trade) { create(:trade, :btcusd, price: '5.0'.to_d, amount: '1.1'.to_d, total: '5.5'.to_d)}
-        let!(:trade_btceth) { create(:trade, :btceth, price: '1.0'.to_d, amount: '0.3'.to_d, total: '5.5'.to_d)}
+        let!(:trade) { create(:trade, :btcusd, price: '5.0'.to_d, amount: '1.1'.to_d, total: '5.5'.to_d) }
+        let!(:trade_btceth) { create(:trade, :btceth, price: '1.0'.to_d, amount: '0.3'.to_d, total: '5.5'.to_d) }
 
-        let!(:portfolio1) { create(:portfolio, portfolio_currency_id: trade_btceth.market.quote_unit, currency_id: 'btc',
-                                    total_credit: 0.1, total_credit_fees: 0.01, total_credit_value: 0.3, total_debit: 0.2,
-                                    total_debit_value: 10.0, member_id: trade.maker_order.member.id, last_liability_id: 1)}
+        let!(:portfolio1) do
+          create(:portfolio, portfolio_currency_id: trade_btceth.market.quote_unit, currency_id: 'btc',
+                             total_credit: 0.1, total_credit_fees: 0.01, total_credit_value: 0.3, total_debit: 0.2,
+                             total_debit_value: 10.0, member_id: trade.maker_order.member.id, last_liability_id: 1)
+        end
 
-        let!(:portfolio2) { create(:portfolio, portfolio_currency_id: trade_btceth.market.quote_unit, currency_id: 'usd',
-                                    total_credit: 0.1, total_credit_fees: 0.01, total_credit_value: 0.3, total_debit: 0.2,
-                                    total_debit_value: 10.0, member_id: trade.maker_order.member.id, last_liability_id: 1)}
+        let!(:portfolio2) do
+          create(:portfolio, portfolio_currency_id: trade_btceth.market.quote_unit, currency_id: 'usd',
+                             total_credit: 0.1, total_credit_fees: 0.01, total_credit_value: 0.3, total_debit: 0.2,
+                             total_debit_value: 10.0, member_id: trade.maker_order.member.id, last_liability_id: 1)
+        end
 
-        let!(:portfolio3) { create(:portfolio, portfolio_currency_id: trade_btceth.market.quote_unit, currency_id: 'usd',
-                                    total_credit: 0.4, total_credit_fees: 0.01, total_credit_value: 0.3, total_debit: 0.2,
-                                    total_debit_value: 10.0, member_id: trade.taker_order.member.id, last_liability_id: 1)}
+        let!(:portfolio3) do
+          create(:portfolio, portfolio_currency_id: trade_btceth.market.quote_unit, currency_id: 'usd',
+                             total_credit: 0.4, total_credit_fees: 0.01, total_credit_value: 0.3, total_debit: 0.2,
+                             total_debit_value: 10.0, member_id: trade.taker_order.member.id, last_liability_id: 1)
+        end
 
-        let!(:portfolio4) { create(:portfolio, portfolio_currency_id: trade_btceth.market.quote_unit, currency_id: 'btc',
-                                    total_credit: 0.4, total_credit_fees: 0.01, total_credit_value: 0.3,
-                                    total_debit: 0.2, total_debit_value: 10.0, member_id: trade.taker_order.member.id, last_liability_id: 1)}
+        let!(:portfolio4) do
+          create(:portfolio, portfolio_currency_id: trade_btceth.market.quote_unit, currency_id: 'btc',
+                             total_credit: 0.4, total_credit_fees: 0.01, total_credit_value: 0.3,
+                             total_debit: 0.2, total_debit_value: 10.0, member_id: trade.taker_order.member.id, last_liability_id: 1)
+        end
 
         let!(:liability) { create(:liability, id: 2, member_id: member.id, credit: 110.0, reference_type: 'Trade', reference_id: trade.id) }
 
@@ -498,7 +539,7 @@ describe Jobs::Cron::Portfolio do
         end
 
         it do
-          expect{ Jobs::Cron::Portfolio.process_currency(trade_btceth.market.quote_unit) }.to change{ Portfolio.count }.by(0)
+          expect { Jobs::Cron::Portfolio.process_currency(trade_btceth.market.quote_unit) }.to change { Portfolio.count }.by(0)
 
           total_fees = trade.total * trade.order_fee(trade.maker_order)
           expect(Portfolio.all[0].member_id).to eq trade.maker_order.member.id
@@ -545,9 +586,9 @@ describe Jobs::Cron::Portfolio do
       end
 
       context 'creates portfolios while executing 1 trade' do
-        let!(:trade) { create(:trade, :btcusd, price: '5.0'.to_d, amount: '1.1'.to_d, total: '5.5'.to_d)}
-        let!(:portfolio) { create(:portfolio, last_liability_id: 1)}
-        let!(:trade_btceth) { create(:trade, :btceth, price: '1.0'.to_d, amount: '0.3'.to_d, total: '5.5'.to_d)}
+        let!(:trade) { create(:trade, :btcusd, price: '5.0'.to_d, amount: '1.1'.to_d, total: '5.5'.to_d) }
+        let!(:portfolio) { create(:portfolio, last_liability_id: 1) }
+        let!(:trade_btceth) { create(:trade, :btceth, price: '1.0'.to_d, amount: '0.3'.to_d, total: '5.5'.to_d) }
 
         let!(:liability) { create(:liability, id: 2, member: member, credit: 110.0, reference_type: 'Trade', reference_id: trade.id) }
 
@@ -556,7 +597,7 @@ describe Jobs::Cron::Portfolio do
         end
 
         it do
-          expect{ Jobs::Cron::Portfolio.process_currency(trade_btceth.market.quote_unit) }.to change{ Portfolio.count }.by(4)
+          expect { Jobs::Cron::Portfolio.process_currency(trade_btceth.market.quote_unit) }.to change { Portfolio.count }.by(4)
 
           total_fees = trade.total * trade.order_fee(trade.maker_order)
           expect(Portfolio.all[1].member_id).to eq trade.maker_order.member.id
@@ -618,8 +659,8 @@ describe Jobs::Cron::Portfolio do
 
     context 'liability for reference type deposit' do
       let!(:coin_deposit) { create(:deposit, :deposit_btc) }
-      let!(:portfolio) { create(:portfolio, last_liability_id: 1)}
-      let!(:trade_btceth) { create(:trade, :btceth, price: '1.0'.to_d, amount: '0.3'.to_d, total: '5.5'.to_d)}
+      let!(:portfolio) { create(:portfolio, last_liability_id: 1) }
+      let!(:trade_btceth) { create(:trade, :btceth, price: '1.0'.to_d, amount: '0.3'.to_d, total: '5.5'.to_d) }
 
       let!(:liability) { create(:liability, id: 2, member: member, credit: 190.0, reference_type: 'Deposit', reference_id: coin_deposit.id) }
 
@@ -628,7 +669,7 @@ describe Jobs::Cron::Portfolio do
       end
 
       it do
-        expect{ Jobs::Cron::Portfolio.process }.to change{ Portfolio.count }.by(2)
+        expect { Jobs::Cron::Portfolio.process }.to change { Portfolio.count }.by(2)
 
         expect(Portfolio.second.member_id).to eq coin_deposit.member_id
         expect(Portfolio.second.currency_id).to eq coin_deposit.currency_id
@@ -639,7 +680,6 @@ describe Jobs::Cron::Portfolio do
         expect(Portfolio.second.total_credit_fees).to eq coin_deposit.fee
         expect(Portfolio.second.total_debit_fees).to eq 0
         expect(Portfolio.second.total_credit_value).to eq coin_deposit.amount * trade_btceth.price
-        expect(Portfolio.second.last_liability_id).to eq liability.id
 
         expect(Portfolio.last.member_id).to eq coin_deposit.member_id
         expect(Portfolio.last.currency_id).to eq coin_deposit.currency_id
@@ -650,8 +690,240 @@ describe Jobs::Cron::Portfolio do
         expect(Portfolio.last.total_credit_fees).to eq coin_deposit.fee
         expect(Portfolio.last.total_debit_fees).to eq 0
         expect(Portfolio.last.total_credit_value).to eq coin_deposit.amount * trade_btceth.price
-        expect(Portfolio.last.last_liability_id).to eq liability.id
       end
     end
+  end
+
+  context 'scenario1_internal_sell' do
+    before do
+      Jobs::Cron::Portfolio.stubs(:portfolio_currencies).returns(['usd'])
+    end
+
+    def scenario1_internal_sell_with_partial_refund
+      key = (Time.now.to_f * 1000).to_i
+      create(:deposit_usd, member: member, amount: 100).accept!
+      d = create(:deposit_btc, member: member_platform, amount: 0.09)
+      d.accept!
+      d.process!
+      d.dispatch
+
+      transfers_attr = [
+        {
+          key: key,
+          category: Transfer::CATEGORIES_MAPPING[:purchases],
+          operations: [
+            {
+              currency: :usd,
+              amount: 100,
+              account_src: {
+                code: 201,
+                uid: member.uid
+              },
+              account_dst: {
+                code: 211,
+                uid: member.uid
+              }
+            }
+          ]
+        },
+        {
+          key: key + 1,
+          category: Transfer::CATEGORIES_MAPPING[:purchases],
+          operations: [
+            {
+              # Refund (unlock) user 10 usd
+              currency: :usd,
+              amount: 10,
+              account_src: {
+                code: 211,
+                uid: member.uid
+              },
+              account_dst: {
+                code: 201,
+                uid: member.uid
+              }
+            },
+            {
+              # Transfer 89 usd from user to the platform
+              currency: :usd,
+              amount: 89,
+              account_src: {
+                code: 211,
+                uid: member.uid
+              },
+              account_dst: {
+                code: 201,
+                uid: member_platform.uid
+              }
+            },
+            {
+              # Transfer 1 usd from user to the platform fees
+              currency: :usd,
+              amount: 1,
+              account_src: {
+                code: 211,
+                uid: member.uid
+              },
+              account_dst: {
+                code: 301,
+                uid: member.uid
+              }
+            },
+            {
+              # Transfer 0.09 btc from the platform to the user
+              currency: :btc,
+              amount: 0.09,
+              account_src: {
+                code: 202,
+                uid: member_platform.uid
+              },
+              account_dst: {
+                code: 202,
+                uid: member.uid
+              }
+            }
+          ]
+        }
+      ]
+
+      transfers_attr.each do |transfer_attrs|
+        create_transfer(transfer_attrs)
+      end
+    end
+
+    it do
+      scenario1_internal_sell_with_partial_refund
+      Jobs::Cron::Portfolio.stubs(:price_at).with('usd', 'usd', anything).returns(1)
+      Jobs::Cron::Portfolio.stubs(:price_at).with('usd', 'btc', anything).returns(10_000)
+      Jobs::Cron::Portfolio.process
+
+      expect(Portfolio.all.size).to eq(4)
+
+      musd = Portfolio.find_by(member_id: member.id, portfolio_currency_id: 'usd', currency_id: 'usd')
+      expect(musd.total_credit).to eq(100)
+      expect(musd.total_credit_fees).to eq(0)
+      expect(musd.total_debit_fees).to eq(1)
+      expect(musd.total_debit).to eq(89)
+      expect(musd.total_credit_value).to eq(100)
+      expect(musd.total_debit_value).to eq(89)
+      expect(musd.last_liability_id).to eq(11)
+
+      mbtc = Portfolio.find_by(member_id: member.id, portfolio_currency_id: 'usd', currency_id: 'btc')
+      expect(mbtc.total_credit).to eq(0.09)
+      expect(mbtc.total_credit_fees).to eq(0)
+      expect(mbtc.total_debit_fees).to eq(0)
+      expect(mbtc.total_debit).to eq(0)
+      expect(mbtc.total_credit_value).to eq(90)
+      expect(mbtc.total_debit_value).to eq(0)
+      expect(mbtc.last_liability_id).to eq(13)
+    end
+
+    def scenario2_internal_sell
+      key = (Time.now.to_f * 1000).to_i
+      create(:deposit_usd, member: member, amount: 100).accept!
+      d = create(:deposit_btc, member: member_platform, amount: 0.09)
+      d.accept!
+      d.process!
+      d.dispatch
+
+      transfers_attr = [
+        {
+          key: key,
+          category: Transfer::CATEGORIES_MAPPING[:purchases],
+          operations: [
+            {
+              currency: :usd,
+              amount: 100,
+              account_src: {
+                code: 201,
+                uid: member.uid
+              },
+              account_dst: {
+                code: 211,
+                uid: member.uid
+              }
+            }
+          ]
+        },
+        {
+          key: key + 1,
+          category: Transfer::CATEGORIES_MAPPING[:purchases],
+          operations: [
+            {
+              # Transfer 99 usd from user to the platform
+              currency: :usd,
+              amount: 99,
+              account_src: {
+                code: 211,
+                uid: member.uid
+              },
+              account_dst: {
+                code: 201,
+                uid: member_platform.uid
+              }
+            },
+            {
+              # Transfer 1 usd from user to the platform fees
+              currency: :usd,
+              amount: 1,
+              account_src: {
+                code: 211,
+                uid: member.uid
+              },
+              account_dst: {
+                code: 301,
+                uid: member.uid
+              }
+            },
+            {
+              # Transfer 0.09 btc from the platform to the user
+              currency: :btc,
+              amount: 0.09,
+              account_src: {
+                code: 202,
+                uid: member_platform.uid
+              },
+              account_dst: {
+                code: 202,
+                uid: member.uid
+              }
+            }
+          ]
+        }
+      ]
+
+      transfers_attr.each do |transfer_attrs|
+        create_transfer(transfer_attrs)
+      end
+    end
+
+    it do
+      scenario2_internal_sell
+      Jobs::Cron::Portfolio.stubs(:price_at).with('usd', 'usd', anything).returns(1)
+      Jobs::Cron::Portfolio.stubs(:price_at).with('usd', 'btc', anything).returns(10_000)
+      Jobs::Cron::Portfolio.process
+
+      expect(Portfolio.all.size).to eq(4)
+
+      musd = Portfolio.find_by(member_id: member.id, portfolio_currency_id: 'usd', currency_id: 'usd')
+      expect(musd.total_credit).to eq(100)
+      expect(musd.total_credit_fees).to eq(0)
+      expect(musd.total_debit_fees).to eq(1)
+      expect(musd.total_debit).to eq(99)
+      expect(musd.total_credit_value).to eq(100)
+      expect(musd.total_debit_value).to eq(99)
+      expect(musd.last_liability_id).to eq(9)
+
+      mbtc = Portfolio.find_by(member_id: member.id, portfolio_currency_id: 'usd', currency_id: 'btc')
+      expect(mbtc.total_credit).to eq(0.09)
+      expect(mbtc.total_credit_fees).to eq(0)
+      expect(mbtc.total_debit_fees).to eq(0)
+      expect(mbtc.total_debit).to eq(0)
+      expect(mbtc.total_credit_value).to be_within(0.0001).of(100)
+      expect(mbtc.total_debit_value).to eq(0)
+      expect(mbtc.last_liability_id).to eq(11)
+    end
+
+
   end
 end

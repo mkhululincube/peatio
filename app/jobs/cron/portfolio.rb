@@ -61,7 +61,7 @@ module Jobs::Cron
           values << portfolios_values(order.member_id, portfolio_currency, outcome_currency_id, 0, 0, 0, liability_id, total_debit, total_debit_value, 0)
         end
 
-        values.flatten
+        values
       end
 
       def process_deposit(portfolio_currency, liability_id, deposit)
@@ -82,25 +82,31 @@ module Jobs::Cron
       end
 
       def process
+        l_count = 0
         portfolio_currencies.each do |portfolio_currency|
           begin
-            process_currency(portfolio_currency)
+            l_count += process_currency(portfolio_currency)
           rescue StandardError => e
-            Rails.logger.error("Failed to process currency #{portfolio_currency}: #{e}")
+            Rails.logger.error("Failed to process currency #{portfolio_currency}: #{e}: #{e.backtrace.join("\n")}")
           end
         end
 
-        sleep 2
+        sleep 2 if l_count == 0
       end
 
       def process_currency(portfolio_currency)
+        l_count = 0
         values = []
+        liability_pointer = max_liability(portfolio_currency)
+        # We use MIN function here instead of ANY_VALUE to be compatible with many MySQL versions
         ActiveRecord::Base.connection
-          .select_all("SELECT MAX(id) id, ANY_VALUE(reference_type) reference_type, ANY_VALUE(reference_id) reference_id " \
-                      "FROM liabilities WHERE id > #{max_liability(portfolio_currency)} " \
-                      "AND ((reference_type IN ('Trade','Deposit', 'Adjustment') AND code IN (201,202)) " \
-                      "OR (reference_type = 'Withdraw' AND code IN (211,212))) GROUP BY reference_id ORDER BY MAX(id) ASC LIMIT 10000")
+          .select_all("SELECT MAX(id) id, MIN(reference_type) reference_type, MIN(reference_id) reference_id " \
+                      "FROM liabilities WHERE id > #{liability_pointer} " \
+                      "AND ((reference_type IN ('Trade','Deposit','Adjustment') AND code IN (201,202)) " \
+                      "OR (reference_type IN ('Withdraw') AND code IN (211,212))) " \
+                      "GROUP BY reference_id ORDER BY MAX(id) ASC LIMIT 10000")
           .each do |liability|
+            l_count += 1
             Rails.logger.info { "Process liability: #{liability['id']}" }
 
             case liability['reference_type']
@@ -109,15 +115,110 @@ module Jobs::Cron
                 values << process_deposit(portfolio_currency, liability['id'], deposit)
               when 'Trade'
                 trade = Trade.find(liability['reference_id'])
-                values << process_order(portfolio_currency, liability['id'], trade, trade.maker_order)
-                values << process_order(portfolio_currency, liability['id'], trade, trade.taker_order)
-                values = values.flatten
+                values += process_order(portfolio_currency, liability['id'], trade, trade.maker_order)
+                values += process_order(portfolio_currency, liability['id'], trade, trade.taker_order)
               when 'Withdraw'
                 withdraw = Withdraw.find(liability['reference_id'])
                 values << process_withdraw(portfolio_currency, liability['id'], withdraw)
             end
         end
+
+        transfers = {}
+        liabilities = ActiveRecord::Base.connection
+        .select_all("SELECT MAX(id) id, currency_id, member_id, reference_type, reference_id, SUM(credit-debit) as total FROM liabilities "\
+                    "WHERE reference_type = 'Transfer' AND id > #{liability_pointer} "\
+                    "GROUP BY currency_id, member_id, reference_type, reference_id")
+
+        liabilities.each do |l|
+          next if l['total'].zero?
+
+          l_count += 1
+          ref = l['reference_id']
+          cid = l['currency_id']
+          transfers[ref] ||= {}
+          transfers[ref][cid] ||= {
+            type: nil,
+            liabilities: []
+          }
+
+          transfers[ref][cid][:liabilities] << l
+        end
+
+        transfers.each do |ref, transfer|
+          case transfer.size # number of currencies in the transfer
+          when 1
+            # Probably a lock transfer, ignoring
+
+          when 2
+            # We have 2 currencies exchanges, so we can integrate those numbers in acquisition cost calculation
+            store = Hash.new do |member_store, mid|
+              member_store[mid] = Hash.new do |h, k|
+                h[k] = {
+                  total_debit_fees: 0,
+                  total_credit_fees: 0,
+                  total_credit: 0,
+                  total_debit: 0,
+                  total_amount: 0,
+                  liability_id: 0
+                }
+              end
+            end
+
+            transfer.each do |cid, infos|
+              Operations::Revenue.where(reference_type: 'Transfer', reference_id: ref, currency_id: cid).each do |fee|
+                store[fee.member_id][cid][:total_debit_fees] += fee.credit
+                store[fee.member_id][cid][:total_debit] -= fee.credit
+                # We don't support fees payed on credit, they are all considered debit fees
+              end
+
+              infos[:liabilities].each do |l|
+                store[l['member_id']] ||= {}
+                store[l['member_id']][cid]
+
+                if l['total'].positive?
+                  store[l['member_id']][cid][:total_credit] += l['total']
+                  store[l['member_id']][cid][:total_amount] += l['total']
+                else
+                  store[l['member_id']][cid][:total_debit] -= l['total']
+                  store[l['member_id']][cid][:total_amount] -= l['total']
+                end
+                store[l['member_id']][cid][:liability_id] = l['id'] if store[l['member_id']][cid][:liability_id] < l['id']
+              end
+            end
+
+            def price_of_transfer(a_total, b_total)
+              b_total / a_total
+            end
+
+            store.each do |member_id, stats|
+              a, b = stats.keys
+
+              if a == portfolio_currency
+                b, a = stats.keys
+              elsif b != portfolio_currency
+                raise 'Need direct conversion for transfers'
+              end
+              next if stats[b][:total_amount].zero?
+
+              price = price_of_transfer(stats[a][:total_amount], stats[b][:total_amount])
+
+              a_total_credit_value = stats[a][:total_credit] * price
+              b_total_credit_value = stats[b][:total_credit]
+
+              a_total_debit_value = stats[a][:total_debit] * price
+              b_total_debit_value = stats[b][:total_debit]
+
+              values << portfolios_values(member_id, portfolio_currency, a, stats[a][:total_credit], stats[a][:total_credit_fees], a_total_credit_value, stats[a][:liability_id], stats[a][:total_debit], a_total_debit_value, stats[a][:total_debit_fees])
+              values << portfolios_values(member_id, portfolio_currency, b, stats[b][:total_credit], stats[b][:total_credit_fees], b_total_credit_value, stats[b][:liability_id], stats[b][:total_debit], b_total_debit_value, stats[b][:total_debit_fees])
+            end
+
+          else
+            raise 'Transfers with more than 2 currencies brakes pnl calculation'
+          end
+        end
+
         create_or_update_portfolio(values) if values.present?
+        l_count
       end
 
       def portfolios_values(member_id, portfolio_currency_id, currency_id, total_credit, total_credit_fees, total_credit_value, liability_id, total_debit, total_debit_value, total_debit_fees)
