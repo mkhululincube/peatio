@@ -76,263 +76,6 @@ describe Jobs::Cron::Portfolio do
     end
   end
 
-  context 'process_deposit' do
-    let!(:coin_deposit) { create(:deposit, :deposit_btc) }
-    let!(:fiat_deposit) { create(:deposit_usd) }
-
-    let!(:liability1) { create(:liability, member: member, credit: 0.4, reference_type: 'Deposit', reference_id: coin_deposit.id) }
-    let!(:liability2) { create(:liability, member: member, credit: 1000.0, reference_type: 'Deposit', reference_id: fiat_deposit.id) }
-
-    let(:trade1) { create(:trade, :btceth, price: '5.0'.to_d, amount: '1.9'.to_d, total: '5.5'.to_d) }
-    let(:trade2) { create(:trade, :btcusd, price: '100.0'.to_d, amount: '0.4'.to_d, total: '1.5'.to_d) }
-
-    context 'coin deposit' do
-      before do
-        Jobs::Cron::Portfolio.stubs(:price_at).returns(trade1.price)
-      end
-      it do
-        result = Jobs::Cron::Portfolio.process_deposit(trade1.market.quote_unit, liability1.id, coin_deposit)
-        result = result.split(/[(,)]/)
-        expect(result[1].to_i).to eq coin_deposit.member.id
-        expect(result[2]).to eq "'#{trade1.market.quote_unit}'"
-        expect(result[3]).to eq "'#{coin_deposit.currency_id}'"
-        expect(result[4].to_f).to eq coin_deposit.amount
-        expect(result[5].to_f).to eq coin_deposit.fee
-        expect(result[6].to_f).to eq coin_deposit.amount * trade1.price
-        expect(result[7].to_i).to eq liability1.id
-        expect(result[8].to_i).to eq 0
-        expect(result[9].to_i).to eq 0
-        expect(result[10].to_i).to eq 0
-      end
-    end
-
-    context 'fiat deposit' do
-      before do
-        Jobs::Cron::Portfolio.stubs(:price_at).returns(trade2.price)
-      end
-      it do
-        result = Jobs::Cron::Portfolio.process_deposit(trade2.market.quote_unit, liability2.id, fiat_deposit)
-        result = result.split(/[(,)]/)
-        expect(result[1].to_i).to eq fiat_deposit.member.id
-        expect(result[2]).to eq "'#{trade2.market.quote_unit}'"
-        expect(result[3]).to eq "'#{fiat_deposit.currency_id}'"
-        expect(result[4].to_f).to eq fiat_deposit.amount
-        expect(result[5].to_f).to eq fiat_deposit.fee
-        expect(result[6].to_f).to eq fiat_deposit.amount * trade2.price
-        expect(result[7].to_i).to eq liability2.id
-        expect(result[8].to_i).to eq 0
-        expect(result[9].to_i).to eq 0
-        expect(result[10].to_i).to eq 0
-      end
-    end
-  end
-
-  context 'process_withdraw' do
-    before do
-      member.touch_accounts
-      member.accounts.map { |a| a.update(balance: 500) }
-    end
-
-    let!(:coin_withdraw) { create(:btc_withdraw, sum: 0.3.to_d, member: member, aasm_state: 'succeed') }
-    let!(:fiat_withdraw) { create(:usd_withdraw, sum: 100.to_d, member: member, aasm_state: 'succeed') }
-
-    let!(:liability1) { create(:liability, member: member, debit: 0.3, reference_type: 'Withdraw', reference_id: coin_withdraw.id) }
-    let!(:liability2) { create(:liability, member: member, debit: 100.0, reference_type: 'Withdraw', reference_id: fiat_withdraw.id) }
-
-    let(:trade1) { create(:trade, :btceth, price: '5.0'.to_d, amount: '1.9'.to_d, total: '5.5'.to_d) }
-    let(:trade2) { create(:trade, :btcusd, price: '100.0'.to_d, amount: '0.4'.to_d, total: '1.5'.to_d) }
-
-    context 'coin withdraw' do
-      before do
-        Jobs::Cron::Portfolio.stubs(:price_at).returns(trade1.price)
-      end
-
-      it do
-        result = Jobs::Cron::Portfolio.process_withdraw(trade1.market.quote_unit, liability1.id, coin_withdraw)
-        result = result.split(/[(,)]/)
-
-        expect(result[1].to_i).to eq coin_withdraw.member.id
-        expect(result[2]).to eq "'#{trade1.market.quote_unit}'"
-        expect(result[3]).to eq "'#{coin_withdraw.currency_id}'"
-        expect(result[4].to_f).to eq 0
-        expect(result[5].to_f).to eq 0
-        expect(result[6].to_f).to eq 0
-        expect(result[7].to_i).to eq liability1.id
-        expect(result[8].to_f).to eq coin_withdraw.amount.to_f
-        expect(result[9].to_f).to eq (coin_withdraw.amount.to_f + coin_withdraw.fee.to_f) * trade1.price.to_f
-        expect(result[10].to_f).to eq coin_withdraw.fee
-      end
-    end
-
-    context 'fiat withdraw' do
-      before do
-        Jobs::Cron::Portfolio.stubs(:price_at).returns(trade2.price)
-      end
-
-      it do
-        result = Jobs::Cron::Portfolio.process_withdraw(trade2.market.quote_unit, liability2.id, fiat_withdraw)
-        result = result.split(/[(,)]/)
-
-        expect(result[1].to_i).to eq fiat_withdraw.member.id
-        expect(result[2]).to eq "'#{trade2.market.quote_unit}'"
-        expect(result[3]).to eq "'#{fiat_withdraw.currency_id}'"
-        expect(result[4].to_f).to eq 0
-        expect(result[5].to_f).to eq 0
-        expect(result[6].to_f).to eq 0
-        expect(result[7].to_i).to eq liability2.id
-        expect(result[8].to_f).to eq fiat_withdraw.amount.to_f
-        expect(result[9].to_f).to eq (fiat_withdraw.amount.to_f + fiat_withdraw.fee.to_f) * trade2.price.to_f
-        expect(result[10].to_f).to eq fiat_withdraw.fee
-      end
-    end
-  end
-
-  context 'process_order' do
-    let!(:trade_eth) { create(:trade, :btceth, price: '1.0'.to_d, amount: '0.3'.to_d, total: '5.5'.to_d) }
-
-    let!(:trade) { create(:trade, :btcusd, price: '5.0'.to_d, amount: '1.1'.to_d, total: '5.5'.to_d) }
-    let!(:liability) { create(:liability, member: member, credit: 0.4, reference_type: 'Trade', reference_id: trade.id) }
-
-    before do
-      Jobs::Cron::Portfolio.stubs(:price_at).returns(trade_eth.price.to_f)
-    end
-
-    context 'buy order' do
-      it do
-        result = Jobs::Cron::Portfolio.process_order(trade_eth.market.quote_unit, liability.id, trade, trade.taker_order)
-
-        res1 = result[0].split(/[(,)]/)
-        total_fees = trade.amount * trade.order_fee(trade.taker_order)
-        expect(res1[1].to_i).to eq trade.taker_order.member.id
-        expect(res1[2]).to eq "'#{trade_eth.market.quote_unit}'"
-        expect(res1[3]).to eq "'#{trade.taker_order.income_currency.id}'"
-        expect(res1[4].to_f).to eq trade.amount - total_fees
-        expect(res1[5].to_f).to eq total_fees
-        expect(res1[6].to_f).to eq (trade.amount - total_fees).to_f * trade_eth.price
-        expect(res1[7].to_i).to eq liability.id
-        expect(res1[8].to_f).to eq 0
-        expect(res1[9].to_f).to eq 0
-        expect(res1[10].to_f).to eq 0
-
-        res2 = result[1].split(/[(,)]/)
-        expect(res2[1].to_i).to eq trade.taker_order.member.id
-        expect(res2[2]).to eq "'#{trade_eth.market.quote_unit}'"
-        expect(res2[3]).to eq "'#{trade.taker_order.outcome_currency.id}'"
-        expect(res2[4].to_f).to eq 0
-        expect(res2[5].to_f).to eq 0
-        expect(res2[6].to_f).to eq 0
-        expect(res2[7].to_i).to eq liability.id
-        expect(res2[8].to_f).to eq trade.total
-        expect(res2[9].to_f).to eq trade.total * trade_eth.price
-        expect(res2[10].to_f).to eq 0
-      end
-    end
-
-    context 'sell order' do
-      it do
-        result = Jobs::Cron::Portfolio.process_order(trade_eth.market.quote_unit, liability.id, trade, trade.maker_order)
-
-        res1 = result[0].split(/[(,)]/)
-        total_fees = trade.total * trade.order_fee(trade.maker_order)
-        expect(res1[1].to_i).to eq trade.maker_order.member.id
-        expect(res1[2]).to eq "'#{trade_eth.market.quote_unit}'"
-        expect(res1[3]).to eq "'#{trade.maker_order.income_currency.id}'"
-        expect(res1[4].to_f).to eq trade.total - total_fees
-        expect(res1[5].to_f).to eq total_fees
-        expect(res1[6].to_f).to eq (trade.total - total_fees) * trade_eth.price
-        expect(res1[7].to_i).to eq liability.id
-        expect(res1[8].to_f).to eq 0
-        expect(res1[9].to_f).to eq 0
-        expect(res1[10].to_f).to eq 0
-
-        res2 = result[1].split(/[(,)]/)
-        expect(res2[1].to_i).to eq trade.maker_order.member.id
-        expect(res2[2]).to eq "'#{trade_eth.market.quote_unit}'"
-        expect(res2[3]).to eq "'#{trade.maker_order.outcome_currency.id}'"
-        expect(res2[4].to_f).to eq 0
-        expect(res2[5].to_f).to eq 0
-        expect(res2[6].to_f).to eq 0
-        expect(res2[7].to_i).to eq liability.id
-        expect(res2[8].to_f).to eq trade.amount
-        expect(res2[9].to_f).to eq trade.amount * trade_eth.price
-        expect(res2[10].to_f).to eq 0
-      end
-    end
-
-    context 'market quote unit is equal to porfolio' do
-      let!(:trade_eth) { create(:trade, :btceth, price: '1.0'.to_d, amount: '0.3'.to_d, total: '5.5'.to_d) }
-
-      let!(:trade) { create(:trade, :btceth, price: '5.0'.to_d, amount: '1.1'.to_d, total: '5.5'.to_d) }
-      let!(:liability) { create(:liability, member: member, credit: 0.4, reference_type: 'Trade', reference_id: trade.id) }
-
-      before do
-        Jobs::Cron::Portfolio.stubs(:price_at).returns(trade_eth.price.to_f)
-      end
-
-      context 'buy order' do
-        it do
-          result = Jobs::Cron::Portfolio.process_order(trade.market.quote_unit, liability.id, trade, trade.taker_order)
-
-          res1 = result[0].split(/[(,)]/)
-          total_fees = trade.amount * trade.order_fee(trade.taker_order)
-          expect(res1[1].to_i).to eq trade.taker_order.member.id
-          expect(res1[2]).to eq "'#{trade.market.quote_unit}'"
-          expect(res1[3]).to eq "'#{trade.taker_order.income_currency.id}'"
-          expect(res1[4].to_f).to eq trade.amount - total_fees
-          expect(res1[5].to_f).to eq total_fees
-          expect(res1[6].to_f).to eq (trade.amount - total_fees).to_f * trade.price
-          expect(res1[7].to_i).to eq liability.id
-          expect(res1[8].to_f).to eq 0
-          expect(res1[9].to_f).to eq 0
-          expect(res1[10].to_f).to eq 0
-
-          res2 = result[1].split(/[(,)]/)
-          expect(res2[1].to_i).to eq trade.taker_order.member.id
-          expect(res2[2]).to eq "'#{trade.market.quote_unit}'"
-          expect(res2[3]).to eq "'#{trade.taker_order.outcome_currency.id}'"
-          expect(res2[4].to_f).to eq 0
-          expect(res2[5].to_f).to eq 0
-          expect(res2[6].to_f).to eq 0
-          expect(res2[7].to_i).to eq liability.id
-          expect(res2[8].to_f).to eq trade.total
-          expect(res2[9].to_f).to eq trade.total
-          expect(res2[10].to_f).to eq 0
-        end
-      end
-
-      context 'sell order' do
-        it do
-          result = Jobs::Cron::Portfolio.process_order(trade.market.quote_unit, liability.id, trade, trade.maker_order)
-
-          res1 = result[0].split(/[(,)]/)
-          total_fees = trade.total * trade.order_fee(trade.maker_order)
-          expect(res1[1].to_i).to eq trade.maker_order.member.id
-          expect(res1[2]).to eq "'#{trade.market.quote_unit}'"
-          expect(res1[3]).to eq "'#{trade.maker_order.income_currency.id}'"
-          expect(res1[4].to_f).to eq trade.total - total_fees
-          expect(res1[5].to_f).to eq total_fees
-          expect(res1[6].to_f).to eq trade.total - total_fees
-          expect(res1[7].to_i).to eq liability.id
-          expect(res1[8].to_f).to eq 0
-          expect(res1[9].to_f).to eq 0
-          expect(res1[10].to_f).to eq 0
-
-          res2 = result[1].split(/[(,)]/)
-          expect(res2[1].to_i).to eq trade.maker_order.member.id
-          expect(res2[2]).to eq "'#{trade.market.quote_unit}'"
-          expect(res2[3]).to eq "'#{trade.maker_order.outcome_currency.id}'"
-          expect(res2[4].to_f).to eq 0
-          expect(res2[5].to_f).to eq 0
-          expect(res2[6].to_f).to eq 0
-          expect(res2[7].to_i).to eq liability.id
-          expect(res2[8].to_f).to eq trade.amount
-          expect(res2[9].to_f).to eq trade.amount * trade.price
-          expect(res2[10].to_f).to eq 0
-        end
-      end
-    end
-  end
-
   context 'process currency' do
     before(:each) do
       Portfolio.delete_all
@@ -370,6 +113,7 @@ describe Jobs::Cron::Portfolio do
           expect(Portfolio.last.total_debit_fees).to eq coin_withdraw.fee
           expect(Portfolio.last.total_credit_fees).to eq 0
           expect(Portfolio.last.total_credit_value).to eq 0
+          expect(Portfolio.last.total_balance_value).to eq 0
           expect(Portfolio.last.last_liability_id).to eq liability.id
         end
       end
@@ -379,7 +123,8 @@ describe Jobs::Cron::Portfolio do
         let!(:trade_btceth) { create(:trade, :btceth, price: '1.0'.to_d, amount: '0.3'.to_d, total: '5.5'.to_d) }
         let!(:portfolio) do
           create(:portfolio, currency_id: coin_withdraw.currency_id, portfolio_currency_id: trade_btceth.market.quote_unit, total_debit: 0.1,
-                             total_debit_fees: 0.01, total_debit_value: 0.3, member_id: coin_withdraw.member_id, last_liability_id: 1)
+                             total_debit_fees: 0.01, total_debit_value: 0.3,
+                             member_id: coin_withdraw.member_id, last_liability_id: 1)
         end
         let!(:liability) do
           create(:liability, id: 2, member_id: coin_withdraw.member_id, currency_id: coin_withdraw.currency_id,
@@ -396,12 +141,13 @@ describe Jobs::Cron::Portfolio do
           expect(Portfolio.last.member_id).to eq coin_withdraw.member_id
           expect(Portfolio.last.currency_id).to eq coin_withdraw.currency_id
           expect(Portfolio.last.portfolio_currency_id).to eq trade_btceth.market.quote_unit
-          expect(Portfolio.last.total_credit).to eq portfolio.total_credit
+          expect(Portfolio.last.total_credit).to eq 0
           expect(Portfolio.last.total_debit).to eq coin_withdraw.amount + portfolio.total_debit
           expect(Portfolio.last.total_debit_value).to eq (coin_withdraw.amount + coin_withdraw.fee) * trade_btceth.price + portfolio.total_debit_value
           expect(Portfolio.last.total_debit_fees).to eq coin_withdraw.fee + portfolio.total_debit_fees
-          expect(Portfolio.last.total_credit_fees).to eq portfolio.total_credit_fees
-          expect(Portfolio.last.total_credit_value).to eq portfolio.total_credit_value
+          expect(Portfolio.last.total_credit_fees).to eq 0
+          expect(Portfolio.last.total_credit_value).to eq 0
+          expect(Portfolio.last.total_balance_value).to eq 0
           expect(Portfolio.last.last_liability_id).to eq liability.id
         end
       end
@@ -430,6 +176,7 @@ describe Jobs::Cron::Portfolio do
           expect(Portfolio.last.total_debit_fees).to eq 0
           expect(Portfolio.last.total_credit_fees).to eq coin_deposit.fee
           expect(Portfolio.last.total_credit_value).to eq coin_deposit.amount * trade_btceth.price
+          expect(Portfolio.last.total_balance_value).to eq coin_deposit.amount * trade_btceth.price
           expect(Portfolio.last.last_liability_id).to eq liability.id
         end
       end
@@ -459,6 +206,7 @@ describe Jobs::Cron::Portfolio do
           expect(Portfolio.second.total_debit_fees).to eq 0
           expect(Portfolio.second.total_credit_fees).to eq coin_deposit.fee
           expect(Portfolio.second.total_credit_value).to eq coin_deposit.amount * trade_btceth.price
+          expect(Portfolio.second.total_balance_value).to eq coin_deposit.amount * trade_btceth.price
           expect(Portfolio.second.last_liability_id).to eq liability1.id
 
           expect(Portfolio.last.member_id).to eq fiat_deposit.member_id
@@ -470,6 +218,7 @@ describe Jobs::Cron::Portfolio do
           expect(Portfolio.last.total_debit_fees).to eq 0
           expect(Portfolio.last.total_credit_fees).to eq fiat_deposit.fee
           expect(Portfolio.last.total_credit_value).to eq fiat_deposit.amount * trade_btceth.price
+          expect(Portfolio.last.total_balance_value).to eq fiat_deposit.amount * trade_btceth.price
           expect(Portfolio.last.last_liability_id).to eq liability2.id
         end
       end
@@ -479,7 +228,7 @@ describe Jobs::Cron::Portfolio do
         let!(:trade_btceth) { create(:trade, :btceth, price: '1.0'.to_d, amount: '0.3'.to_d, total: '5.5'.to_d) }
         let!(:portfolio) do
           create(:portfolio, currency_id: coin_deposit.currency_id, portfolio_currency_id: trade_btceth.market.quote_unit, total_credit: 0.1,
-                             total_credit_fees: 0.01, total_credit_value: 0.3, member_id: coin_deposit.member_id, last_liability_id: 1)
+                             total_credit_fees: 0.01, total_credit_value: 0.3, total_balance_value: 0.3, member_id: coin_deposit.member_id, last_liability_id: 1)
         end
         let!(:liability) { create(:liability, id: 2, member_id: coin_deposit.member_id, credit: 190.0, reference_type: 'Deposit', reference_id: coin_deposit.id) }
 
@@ -493,11 +242,12 @@ describe Jobs::Cron::Portfolio do
           expect(Portfolio.last.portfolio_currency_id).to eq trade_btceth.market.quote_unit
           expect(Portfolio.last.currency_id).to eq coin_deposit.currency_id
           expect(Portfolio.last.total_credit).to eq (coin_deposit.amount + portfolio.total_credit)
-          expect(Portfolio.last.total_debit_fees).to eq 0
           expect(Portfolio.last.total_credit_fees).to eq (coin_deposit.fee + portfolio.total_credit_fees)
-          expect(Portfolio.last.total_debit).to eq portfolio.total_debit
-          expect(Portfolio.last.total_debit_value).to eq portfolio.total_debit_value
-          expect(Portfolio.last.total_credit_value).to eq coin_deposit.amount * trade_btceth.price + portfolio.total_credit_value
+          expect(Portfolio.last.total_credit_value).to eq portfolio.total_credit_value + coin_deposit.amount * trade_btceth.price
+          expect(Portfolio.last.total_debit).to eq 0
+          expect(Portfolio.last.total_debit_fees).to eq 0
+          expect(Portfolio.last.total_debit_value).to eq 0
+          expect(Portfolio.last.total_balance_value).to eq portfolio.total_credit_value + coin_deposit.amount * trade_btceth.price
           expect(Portfolio.last.last_liability_id).to eq liability.id
         end
       end
@@ -510,8 +260,8 @@ describe Jobs::Cron::Portfolio do
 
         let!(:portfolio1) do
           create(:portfolio, portfolio_currency_id: trade_btceth.market.quote_unit, currency_id: 'btc',
-                             total_credit: 0.1, total_credit_fees: 0.01, total_credit_value: 0.3, total_debit: 0.2,
-                             total_debit_value: 10.0, member_id: trade.maker_order.member.id, last_liability_id: 1)
+                             total_credit: 2.0, total_credit_fees: 0.2, total_credit_value: 11.0, total_balance_value: 11.0, total_debit: 0.02,
+                             total_debit_value: 1.0, member_id: trade.maker_order.member.id, last_liability_id: 1)
         end
 
         let!(:portfolio2) do
@@ -550,6 +300,7 @@ describe Jobs::Cron::Portfolio do
           expect(Portfolio.all[0].total_debit).to eq trade.amount + portfolio1.total_debit
           expect(Portfolio.all[0].total_debit_value).to eq portfolio1.total_debit_value + trade.amount * trade_btceth.price
           expect(Portfolio.all[0].total_credit_value).to eq portfolio1.total_credit_value
+          expect(Portfolio.all[0].total_balance_value).to eq portfolio1.total_balance_value - trade.amount * (portfolio1.total_credit_value / portfolio1.total_credit)
           expect(Portfolio.all[0].last_liability_id).to eq liability.id
 
           expect(Portfolio.all[1].member_id).to eq trade.maker_order.member.id
@@ -559,7 +310,8 @@ describe Jobs::Cron::Portfolio do
           expect(Portfolio.all[1].total_credit_fees).to eq total_fees + + portfolio2.total_credit_fees
           expect(Portfolio.all[1].total_debit).to eq portfolio2.total_debit
           expect(Portfolio.all[1].total_debit_value).to eq portfolio2.total_debit_value
-          expect(Portfolio.all[1].total_credit_value).to eq (trade.total - total_fees) * trade_btceth.price + portfolio2.total_credit_value
+          expect(Portfolio.all[1].total_credit_value).to eq portfolio2.total_credit_value + (trade.total - total_fees) * trade_btceth.price
+          expect(Portfolio.all[1].total_balance_value).to eq portfolio2.total_balance_value + (trade.total - total_fees) * trade_btceth.price
           expect(Portfolio.all[1].last_liability_id).to eq liability.id
 
           total_fees = trade.amount * trade.order_fee(trade.taker_order)
@@ -571,6 +323,7 @@ describe Jobs::Cron::Portfolio do
           expect(Portfolio.all[2].total_debit_value).to eq trade.total * trade_btceth.price + portfolio3.total_debit_value
           expect(Portfolio.all[2].total_credit_fees).to eq portfolio3.total_credit_fees
           expect(Portfolio.all[2].total_credit_value).to eq portfolio3.total_credit_value
+          expect(Portfolio.all[2].total_balance_value).to eq portfolio3.total_balance_value - trade.total * (portfolio3.total_credit_value / portfolio3.total_credit)
           expect(Portfolio.all[2].last_liability_id).to eq liability.id
 
           expect(Portfolio.all[3].member_id).to eq trade.taker_order.member.id
@@ -580,7 +333,8 @@ describe Jobs::Cron::Portfolio do
           expect(Portfolio.all[3].total_debit).to eq portfolio4.total_debit
           expect(Portfolio.all[3].total_debit_value).to eq portfolio4.total_debit_value
           expect(Portfolio.all[3].total_credit_fees).to eq total_fees + portfolio4.total_credit_fees
-          expect(Portfolio.all[3].total_credit_value).to eq (trade.amount - total_fees) * trade_btceth.price + portfolio4.total_credit_value
+          expect(Portfolio.all[3].total_credit_value).to eq portfolio4.total_credit_value + (trade.amount - total_fees) * trade_btceth.price
+          expect(Portfolio.all[3].total_balance_value).to eq portfolio4.total_balance_value + (trade.amount - total_fees) * trade_btceth.price
           expect(Portfolio.all[3].last_liability_id).to eq liability.id
         end
       end
@@ -806,7 +560,7 @@ describe Jobs::Cron::Portfolio do
       expect(musd.total_debit).to eq(89)
       expect(musd.total_credit_value).to eq(100)
       expect(musd.total_debit_value).to eq(89)
-      expect(musd.last_liability_id).to eq(11)
+      expect(musd.total_balance_value).to eq(10)
 
       mbtc = Portfolio.find_by(member_id: member.id, portfolio_currency_id: 'usd', currency_id: 'btc')
       expect(mbtc.total_credit).to eq(0.09)
@@ -815,7 +569,7 @@ describe Jobs::Cron::Portfolio do
       expect(mbtc.total_debit).to eq(0)
       expect(mbtc.total_credit_value).to eq(90)
       expect(mbtc.total_debit_value).to eq(0)
-      expect(mbtc.last_liability_id).to eq(13)
+      expect(mbtc.total_balance_value).to eq(90)
     end
 
     def scenario2_internal_sell
@@ -912,7 +666,7 @@ describe Jobs::Cron::Portfolio do
       expect(musd.total_debit).to eq(99)
       expect(musd.total_credit_value).to eq(100)
       expect(musd.total_debit_value).to eq(99)
-      expect(musd.last_liability_id).to eq(9)
+      expect(musd.total_balance_value).to eq(0)
 
       mbtc = Portfolio.find_by(member_id: member.id, portfolio_currency_id: 'usd', currency_id: 'btc')
       expect(mbtc.total_credit).to eq(0.09)
@@ -921,7 +675,7 @@ describe Jobs::Cron::Portfolio do
       expect(mbtc.total_debit).to eq(0)
       expect(mbtc.total_credit_value).to be_within(0.0001).of(100)
       expect(mbtc.total_debit_value).to eq(0)
-      expect(mbtc.last_liability_id).to eq(11)
+      expect(mbtc.total_balance_value).to be_within(0.0001).of(100)
     end
 
 

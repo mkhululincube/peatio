@@ -268,15 +268,16 @@ ActiveRecord::Schema.define(version: 2020_05_27_130534) do
     t.integer "member_id", null: false
     t.string "portfolio_currency_id", limit: 10, null: false
     t.string "currency_id", limit: 10, null: false
-    t.decimal "total_credit", precision: 32, scale: 16
-    t.decimal "total_credit_fees", precision: 32, scale: 16
-    t.decimal "total_debit_fees", precision: 32, scale: 16
-    t.decimal "total_debit", precision: 32, scale: 16
-    t.decimal "total_credit_value", precision: 32, scale: 16
-    t.decimal "total_debit_value", precision: 32, scale: 16
+    t.decimal "total_credit", precision: 32, scale: 16, default: "0.0"
+    t.decimal "total_credit_fees", precision: 32, scale: 16, default: "0.0"
+    t.decimal "total_debit_fees", precision: 32, scale: 16, default: "0.0"
+    t.decimal "total_debit", precision: 32, scale: 16, default: "0.0"
+    t.decimal "total_credit_value", precision: 32, scale: 16, default: "0.0"
+    t.decimal "total_debit_value", precision: 32, scale: 16, default: "0.0"
+    t.decimal "total_balance_value", precision: 32, scale: 16, default: "0.0"
     t.bigint "last_liability_id"
-    t.datetime "created_at", default: -> { "CURRENT_TIMESTAMP" }, null: false
-    t.datetime "updated_at", default: -> { "CURRENT_TIMESTAMP" }, null: false
+    t.datetime "created_at", default: -> { "current_timestamp()" }, null: false
+    t.datetime "updated_at", default: -> { "current_timestamp()" }, null: false
     t.index ["last_liability_id"], name: "index_portfolios_on_last_liability_id"
     t.index ["portfolio_currency_id", "currency_id", "member_id"], name: "index_currency_ids_and_member_id", unique: true
   end

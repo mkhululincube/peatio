@@ -12,6 +12,7 @@ FactoryBot.define do
     total_debit { 0 }
     total_credit_value { 0 }
     total_debit_value { 0 }
+    total_balance_value { 0 }
     last_liability_id { 0 }
   end
 end

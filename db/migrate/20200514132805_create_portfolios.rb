@@ -6,12 +6,13 @@ class CreatePortfolios < ActiveRecord::Migration[5.2]
       t.integer :member_id, null: false
       t.string :portfolio_currency_id, limit: 10, null: false
       t.string :currency_id,           limit: 10, null: false
-      t.decimal :total_credit,         precision: 32, scale: 16
-      t.decimal :total_credit_fees,       precision: 32, scale: 16
-      t.decimal :total_debit_fees,      precision: 32, scale: 16
-      t.decimal :total_debit,          precision: 32, scale: 16
-      t.decimal :total_credit_value,   precision: 32, scale: 16
-      t.decimal :total_debit_value,    precision: 32, scale: 16
+      t.decimal :total_credit,         precision: 32, scale: 16, default: 0
+      t.decimal :total_credit_fees,    precision: 32, scale: 16, default: 0
+      t.decimal :total_debit_fees,     precision: 32, scale: 16, default: 0
+      t.decimal :total_debit,          precision: 32, scale: 16, default: 0
+      t.decimal :total_credit_value,   precision: 32, scale: 16, default: 0
+      t.decimal :total_debit_value,    precision: 32, scale: 16, default: 0
+      t.decimal :total_balance_value,  precision: 32, scale: 16, default: 0
       t.bigint :last_liability_id
       t.datetime :created_at, null: false, default: -> { "CURRENT_TIMESTAMP" }
       t.datetime :updated_at, null: false, default: -> { "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" }

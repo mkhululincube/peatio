@@ -31,7 +31,7 @@ module Jobs::Cron
       end
 
       def process_order(portfolio_currency, liability_id, trade, order)
-        values = []
+        queries = []
         Rails.logger.info { "Process order: #{order.id}" }
         if order.side == 'buy'
           total_credit_fees = trade.amount * trade.order_fee(order)
@@ -46,22 +46,22 @@ module Jobs::Cron
         if trade.market.quote_unit == portfolio_currency
           income_currency_id = order.income_currency.id
           order.side == 'buy' ? total_credit_value = total_credit * trade.price : total_credit_value = total_credit
-          values << portfolios_values(order.member_id, portfolio_currency, income_currency_id, total_credit, total_credit_fees, total_credit_value, liability_id, 0, 0, 0)
+          queries << build_query(order.member_id, portfolio_currency, income_currency_id, total_credit, total_credit_fees, total_credit_value, liability_id, 0, 0, 0)
 
           outcome_currency_id = order.outcome_currency.id
           order.side == 'buy' ? total_debit_value = total_debit : total_debit_value = total_debit * trade.price
-          values << portfolios_values(order.member_id, portfolio_currency, outcome_currency_id, 0, 0, 0, liability_id, total_debit, total_debit_value, 0)
+          queries << build_query(order.member_id, portfolio_currency, outcome_currency_id, 0, 0, 0, liability_id, total_debit, total_debit_value, 0)
         else
           income_currency_id = order.income_currency.id
           total_credit_value = (total_credit) * price_at(portfolio_currency, income_currency_id, trade.created_at)
-          values << portfolios_values(order.member_id, portfolio_currency, income_currency_id, total_credit, total_credit_fees, total_credit_value, liability_id, 0, 0, 0)
+          queries << build_query(order.member_id, portfolio_currency, income_currency_id, total_credit, total_credit_fees, total_credit_value, liability_id, 0, 0, 0)
 
           outcome_currency_id = order.outcome_currency.id
           total_debit_value = (total_debit) * price_at(portfolio_currency, outcome_currency_id, trade.created_at)
-          values << portfolios_values(order.member_id, portfolio_currency, outcome_currency_id, 0, 0, 0, liability_id, total_debit, total_debit_value, 0)
+          queries << build_query(order.member_id, portfolio_currency, outcome_currency_id, 0, 0, 0, liability_id, total_debit, total_debit_value, 0)
         end
 
-        values
+        queries
       end
 
       def process_deposit(portfolio_currency, liability_id, deposit)
@@ -69,7 +69,7 @@ module Jobs::Cron
         total_credit = deposit.amount
         total_credit_fees = deposit.fee
         total_credit_value = total_credit * price_at(portfolio_currency, deposit.currency_id, deposit.created_at)
-        portfolios_values(deposit.member_id, portfolio_currency, deposit.currency_id, total_credit, total_credit_fees, total_credit_value, liability_id, 0, 0, 0)
+        build_query(deposit.member_id, portfolio_currency, deposit.currency_id, total_credit, total_credit_fees, total_credit_value, liability_id, 0, 0, 0)
       end
 
       def process_withdraw(portfolio_currency, liability_id, withdraw)
@@ -78,7 +78,7 @@ module Jobs::Cron
         total_debit_fees = withdraw.fee
         total_debit_value = (total_debit + total_debit_fees) * price_at(portfolio_currency, withdraw.currency_id, withdraw.created_at)
 
-        portfolios_values(withdraw.member_id, portfolio_currency, withdraw.currency_id, 0, 0, 0, liability_id, total_debit, total_debit_value, total_debit_fees)
+        build_query(withdraw.member_id, portfolio_currency, withdraw.currency_id, 0, 0, 0, liability_id, total_debit, total_debit_value, total_debit_fees)
       end
 
       def process
@@ -96,7 +96,7 @@ module Jobs::Cron
 
       def process_currency(portfolio_currency)
         l_count = 0
-        values = []
+        queries = []
         liability_pointer = max_liability(portfolio_currency)
         # We use MIN function here instead of ANY_VALUE to be compatible with many MySQL versions
         ActiveRecord::Base.connection
@@ -112,14 +112,14 @@ module Jobs::Cron
             case liability['reference_type']
               when 'Deposit'
                 deposit = Deposit.find(liability['reference_id'])
-                values << process_deposit(portfolio_currency, liability['id'], deposit)
+                queries << process_deposit(portfolio_currency, liability['id'], deposit)
               when 'Trade'
                 trade = Trade.find(liability['reference_id'])
-                values += process_order(portfolio_currency, liability['id'], trade, trade.maker_order)
-                values += process_order(portfolio_currency, liability['id'], trade, trade.taker_order)
+                queries += process_order(portfolio_currency, liability['id'], trade, trade.maker_order)
+                queries += process_order(portfolio_currency, liability['id'], trade, trade.taker_order)
               when 'Withdraw'
                 withdraw = Withdraw.find(liability['reference_id'])
-                values << process_withdraw(portfolio_currency, liability['id'], withdraw)
+                queries << process_withdraw(portfolio_currency, liability['id'], withdraw)
             end
         end
 
@@ -208,8 +208,8 @@ module Jobs::Cron
               a_total_debit_value = stats[a][:total_debit] * price
               b_total_debit_value = stats[b][:total_debit]
 
-              values << portfolios_values(member_id, portfolio_currency, a, stats[a][:total_credit], stats[a][:total_credit_fees], a_total_credit_value, stats[a][:liability_id], stats[a][:total_debit], a_total_debit_value, stats[a][:total_debit_fees])
-              values << portfolios_values(member_id, portfolio_currency, b, stats[b][:total_credit], stats[b][:total_credit_fees], b_total_credit_value, stats[b][:liability_id], stats[b][:total_debit], b_total_debit_value, stats[b][:total_debit_fees])
+              queries << build_query(member_id, portfolio_currency, a, stats[a][:total_credit], stats[a][:total_credit_fees], a_total_credit_value, stats[a][:liability_id], stats[a][:total_debit], a_total_debit_value, stats[a][:total_debit_fees])
+              queries << build_query(member_id, portfolio_currency, b, stats[b][:total_credit], stats[b][:total_credit_fees], b_total_credit_value, stats[b][:liability_id], stats[b][:total_debit], b_total_debit_value, stats[b][:total_debit_fees])
             end
 
           else
@@ -217,28 +217,32 @@ module Jobs::Cron
           end
         end
 
-        create_or_update_portfolio(values) if values.present?
+        update_portfolio(queries) unless queries.empty?
+
         l_count
       end
 
-      def portfolios_values(member_id, portfolio_currency_id, currency_id, total_credit, total_credit_fees, total_credit_value, liability_id, total_debit, total_debit_value, total_debit_fees)
-        "(#{member_id},'#{portfolio_currency_id}','#{currency_id}',#{total_credit},#{total_credit_fees},#{total_credit_value},#{liability_id},#{total_debit},#{total_debit_value},#{total_debit_fees})"
+      def build_query(member_id, portfolio_currency_id, currency_id, total_credit, total_credit_fees, total_credit_value, liability_id, total_debit, total_debit_value, total_debit_fees)
+        "INSERT INTO portfolios (member_id, portfolio_currency_id, currency_id, total_credit, total_credit_fees, total_credit_value, last_liability_id, total_debit, total_debit_value, total_debit_fees, total_balance_value) " \
+        "VALUES (#{member_id},'#{portfolio_currency_id}','#{currency_id}',#{total_credit},#{total_credit_fees},#{total_credit_value},#{liability_id},#{total_debit},#{total_debit_value},#{total_debit_fees},#{total_credit_value}) " \
+        "ON DUPLICATE KEY UPDATE " \
+        "total_credit = total_credit + VALUES(total_credit), " \
+        "total_credit_fees = total_credit_fees + VALUES(total_credit_fees), " \
+        "total_debit_fees = total_debit_fees + VALUES(total_debit_fees), " \
+        "total_credit_value = total_credit_value + VALUES(total_credit_value), " \
+        "total_debit_value = total_debit_value + VALUES(total_debit_value), " \
+        "total_debit = total_debit + VALUES(total_debit), " \
+        "total_balance_value = total_balance_value + VALUES(total_balance_value) - IF(total_credit = 0, 0, (#{total_debit+total_debit_fees}) * (total_credit_value / total_credit)), " \
+        "updated_at = NOW(), " \
+        "last_liability_id = VALUES(last_liability_id)"
       end
 
-      def create_or_update_portfolio(values)
-        sql = "INSERT INTO portfolios (member_id, portfolio_currency_id, currency_id, total_credit, total_credit_fees, total_credit_value, last_liability_id, total_debit, total_debit_value, total_debit_fees) " \
-              "VALUES #{values.join(',')} " \
-              "ON DUPLICATE KEY UPDATE " \
-              "total_credit = total_credit + VALUES(total_credit), " \
-              "total_credit_fees = total_credit_fees + VALUES(total_credit_fees), " \
-              "total_debit_fees = total_debit_fees + VALUES(total_debit_fees), " \
-              "total_credit_value = total_credit_value + VALUES(total_credit_value), " \
-              "total_debit_value = total_debit_value + VALUES(total_debit_value), " \
-              "total_debit = total_debit + VALUES(total_debit), " \
-              "updated_at = NOW(), " \
-              "last_liability_id = VALUES(last_liability_id)"
-
-        ActiveRecord::Base.connection.exec_query(sql)
+      def update_portfolio(queries)
+        ActiveRecord::Base.connection.transaction do
+          queries.each do |query|
+            ActiveRecord::Base.connection.exec_query(query)
+          end
+        end
       end
     end
   end
