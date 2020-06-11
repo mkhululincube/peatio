@@ -1,17 +1,29 @@
-## Portfolio calculation
+## Trader PnL calculation
 
 This doc describes how you can calculate a trader’s total P&L
 
-* Portfolio currency is a currency in relation to which we estimate our value
-* Currency - income or outcome currency
-* Total Credit - income amount without fees
-* Total Credit Fees - fees from income amount
-* Total Credit Value = (Total Credit + Total Credit Fees) * Last Market Price (currency/ portfolio currency)
-* Total Debit - outcome amount without fees
-* Total Debit Fees - fees from outcome amount
-* Total Debit Value = (Total Debit + Total Debit Fees) * Last Market Price (currency/ portfolio currency)
-* Average Buy Price = Total Credit Value / (Total Credit + Total Credit Fees)
-* Average Sell Price = Total Debit Value / (Total Debit + Total Debit Fees)
+
+
+|Term|Definition|
+|--------|--------------|
+|Portfolio currency|The currency into which the entry is converted to.|
+|Currency|Trader income or outcome currency|
+|Total Credit|Sum of incomes of the trader in the currency (without fees)|
+|Total Credit Fees | Sum of fees applied to incomes of the trader in the currency |
+|Total Credit Value | (Total Credit + Total Credit Fees) estimated in portfolio currency using the latest market price |
+|Total Debit | Sum of outcomes of the trader in the currency (without fees) |
+|Total Debit Fees | Sum of fees applied to outcomes of the trader in the currency |
+|Total Debit Value | (Total Debit + Total Debit Fees) estimated in portfolio currency |
+|Average Buy Price | Total Credit Value / (Total Credit + Total Credit Fees) |
+|Average Sell Price | Total Debit Value / (Total Debit + Total Debit Fees) |
+
+### Configuration
+
+|Environment Variable|Example|Description|
+|--------|--------------|--------------|
+|PORTFOLIO_CURRENCIES|usd,btc|List of portfolio currencies|
+|CONVERSION_PATHS|usdt/krw:usdt/usd,krw/usd this will convert usdt to krw using the last price of markets usdt/usd and usd/krw|By default conversions are made using the direct market (BTC to USD use latest market price of btc/usd). If a direct conversion market is missing you can specify a conversion path setting this variable. Several paths can be defined with semi-colon (;) separation.|
+
 
 ### Formulas
 #### Calculate user Realized PNL

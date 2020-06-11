@@ -9,7 +9,29 @@ module Jobs::Cron
       end
 
       def portfolio_currencies
-        ENV.fetch('PORTFOLIO_CURRENCIES', '').split(',')
+        @portfolio_currencies ||= ENV.fetch('PORTFOLIO_CURRENCIES', '').split(',')
+      end
+
+      def conversion_paths
+        @conversion_paths ||= parse_conversion_paths(ENV.fetch('CONVERSION_PATHS', ''))
+      end
+
+      def parse_conversion_paths(str)
+        paths = {}
+        str.to_s.split(';').each do |path|
+          raise 'Failed to parse CONVERSION_PATHS' if path.count(':') != 1
+
+          mid, markets = path.split(':')
+          raise 'Failed to parse CONVERSION_PATHS' if mid.empty? || mid.count('/') != 1
+
+          paths[mid] = markets.split(',').map do |m|
+            a, b = m.split('/')
+            raise 'Failed to parse CONVERSION_PATHS' if a.to_s.empty? || b.to_s.empty?
+
+            [a, b]
+          end
+        end
+        paths
       end
 
       def conversion_market(currency, portfolio_currency)
@@ -19,12 +41,16 @@ module Jobs::Cron
         market.id
       end
 
-      def price_at(portfolio_currency, currency, at)
+      def price_at(currency, portfolio_currency, at)
         return 1.0 if portfolio_currency == currency
+
+        if (path = conversion_paths["#{currency}/#{portfolio_currency}"])
+          return path.map { |a, b| price_at(a, b, at) }.reduce(&:*)
+        end
 
         market = conversion_market(currency, portfolio_currency)
         nearest_trade = Trade.nearest_trade_from_influx(market, at)
-        Rails.logger.info { "Nearest trade on #{market} trade: #{nearest_trade}" }
+        Rails.logger.debug { "Nearest trade on #{market} trade: #{nearest_trade}" }
         raise Error, "There is no trades on market #{market}" unless nearest_trade.present?
 
         nearest_trade[:price]
@@ -53,11 +79,11 @@ module Jobs::Cron
           queries << build_query(order.member_id, portfolio_currency, outcome_currency_id, 0, 0, 0, liability_id, total_debit, total_debit_value, 0)
         else
           income_currency_id = order.income_currency.id
-          total_credit_value = (total_credit) * price_at(portfolio_currency, income_currency_id, trade.created_at)
+          total_credit_value = (total_credit) * price_at(income_currency_id, portfolio_currency, trade.created_at)
           queries << build_query(order.member_id, portfolio_currency, income_currency_id, total_credit, total_credit_fees, total_credit_value, liability_id, 0, 0, 0)
 
           outcome_currency_id = order.outcome_currency.id
-          total_debit_value = (total_debit) * price_at(portfolio_currency, outcome_currency_id, trade.created_at)
+          total_debit_value = (total_debit) * price_at(outcome_currency_id, portfolio_currency, trade.created_at)
           queries << build_query(order.member_id, portfolio_currency, outcome_currency_id, 0, 0, 0, liability_id, total_debit, total_debit_value, 0)
         end
 
@@ -68,7 +94,7 @@ module Jobs::Cron
         Rails.logger.info { "Process deposit: #{deposit.id}" }
         total_credit = deposit.amount
         total_credit_fees = deposit.fee
-        total_credit_value = total_credit * price_at(portfolio_currency, deposit.currency_id, deposit.created_at)
+        total_credit_value = total_credit * price_at(deposit.currency_id, portfolio_currency, deposit.created_at)
         build_query(deposit.member_id, portfolio_currency, deposit.currency_id, total_credit, total_credit_fees, total_credit_value, liability_id, 0, 0, 0)
       end
 
@@ -76,7 +102,7 @@ module Jobs::Cron
         Rails.logger.info { "Process withdraw: #{withdraw.id}" }
         total_debit = withdraw.amount
         total_debit_fees = withdraw.fee
-        total_debit_value = (total_debit + total_debit_fees) * price_at(portfolio_currency, withdraw.currency_id, withdraw.created_at)
+        total_debit_value = (total_debit + total_debit_fees) * price_at(withdraw.currency_id, portfolio_currency, withdraw.created_at)
 
         build_query(withdraw.member_id, portfolio_currency, withdraw.currency_id, 0, 0, 0, liability_id, total_debit, total_debit_value, total_debit_fees)
       end

@@ -53,7 +53,7 @@ describe Jobs::Cron::Portfolio do
     it 'when there is no trades' do
       market = Market.find_by(base_unit: 'btc', quote_unit: 'usd')
       expect do
-        Jobs::Cron::Portfolio.price_at(market.quote_unit, coin_deposit.currency_id, liability.created_at)
+        Jobs::Cron::Portfolio.price_at(coin_deposit.currency_id, market.quote_unit, liability.created_at)
       end.to raise_error("There is no trades on market #{coin_deposit.currency_id}#{market.quote_unit}")
     end
 
@@ -65,7 +65,7 @@ describe Jobs::Cron::Portfolio do
       end
 
       it 'return trade price' do
-        res = Jobs::Cron::Portfolio.price_at(trade.market.quote_unit, coin_deposit.currency_id, trade.created_at + 3.hours)
+        res = Jobs::Cron::Portfolio.price_at(coin_deposit.currency_id, trade.market.quote_unit, trade.created_at + 3.hours)
         expect(res).to eq trade.price
       end
 
@@ -73,6 +73,24 @@ describe Jobs::Cron::Portfolio do
         res = Jobs::Cron::Portfolio.price_at(coin_deposit.currency_id, coin_deposit.currency_id, trade.created_at + 3.hours)
         expect(res).to eq 1.0
       end
+    end
+  end
+
+  context 'parse_conversion_paths' do
+    it do
+      expect(Jobs::Cron::Portfolio.parse_conversion_paths(nil)).to eq({})
+      expect(Jobs::Cron::Portfolio.parse_conversion_paths('')).to eq({})
+      expect(Jobs::Cron::Portfolio.parse_conversion_paths('usdt/abc:usdt/usd,usd/abc')).to eq(
+        'usdt/abc' => [%w[usdt usd], %w[usd abc]]
+      )
+      expect(Jobs::Cron::Portfolio.parse_conversion_paths('usdt/abc:usdt/usd,usd/abc;usdt/def:usdt/usd,def/abc,abc/usd')).to eq(
+        'usdt/abc' => [%w[usdt usd], %w[usd abc]],
+        'usdt/def' => [%w[usdt usd], %w[def abc], %w[abc usd]]
+      )
+      expect { Jobs::Cron::Portfolio.parse_conversion_paths('usdt/abc,abc/usd') }.to raise_error(StandardError)
+      expect { Jobs::Cron::Portfolio.parse_conversion_paths(':usdt/abc,abc/usd') }.to raise_error(StandardError)
+      expect { Jobs::Cron::Portfolio.parse_conversion_paths('usdtabc:usdt/usd,usd/abc') }.to raise_error(StandardError)
+      expect { Jobs::Cron::Portfolio.parse_conversion_paths('usdt/abc:usdtusd,usdabc') }.to raise_error(StandardError)
     end
   end
 
@@ -548,7 +566,7 @@ describe Jobs::Cron::Portfolio do
     it do
       scenario1_internal_sell_with_partial_refund
       Jobs::Cron::Portfolio.stubs(:price_at).with('usd', 'usd', anything).returns(1)
-      Jobs::Cron::Portfolio.stubs(:price_at).with('usd', 'btc', anything).returns(10_000)
+      Jobs::Cron::Portfolio.stubs(:price_at).with('btc', 'usd', anything).returns(10_000)
       Jobs::Cron::Portfolio.process
 
       expect(Portfolio.all.size).to eq(4)
@@ -677,7 +695,13 @@ describe Jobs::Cron::Portfolio do
       expect(mbtc.total_debit_value).to eq(0)
       expect(mbtc.total_balance_value).to be_within(0.0001).of(100)
     end
+  end
 
-
+  context 'convertion path' do
+    it do
+      Jobs::Cron::Portfolio.stubs(:price_at).with('eth', 'btc', anything).returns(0.95)
+      Jobs::Cron::Portfolio.stubs(:price_at).with('btc', 'usd', anything).returns(10_000)
+      expect(Jobs::Cron::Portfolio.process).to eq(9500)
+    end
   end
 end
