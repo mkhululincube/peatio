@@ -3,7 +3,7 @@
 module API
   module V2
     module Entities
-      class Portfolio < Base
+      class Pnl < Base
         expose(
           :currency_id,
           as: :currency,
@@ -14,11 +14,11 @@ module API
         )
 
         expose(
-          :portfolio_currency_id,
-          as: :portfolio_currency,
+          :pnl_currency_id,
+          as: :pnl_currency,
           documentation: {
             type: String,
-            desc: 'Portfolio currency code.'
+            desc: 'PnL currency code.'
           }
         )
 
@@ -26,7 +26,7 @@ module API
           :total_credit,
           documentation: {
             type: BigDecimal,
-            desc: 'Total credit.'
+            desc: 'Total credit amount.'
           }
         )
 
@@ -34,7 +34,7 @@ module API
           :total_debit,
           documentation: {
             type: BigDecimal,
-            desc: 'Total debit.'
+            desc: 'Total debit amount.'
           }
         )
 
@@ -42,7 +42,7 @@ module API
           :total_credit_value,
           documentation: {
             type: BigDecimal,
-            desc: 'Total credit value.'
+            desc: 'Total credit value in pnl currency.'
           }
         )
 
@@ -50,7 +50,7 @@ module API
           :total_debit_value,
           documentation: {
             type: BigDecimal,
-            desc: 'Total debit value.'
+            desc: 'Total debit value in pnl currency.'
           }
         )
 
@@ -67,6 +67,14 @@ module API
           documentation: {
             type: BigDecimal,
             desc: 'Average sell price.'
+          }
+        )
+
+        expose(
+          :balance_value,
+          documentation: {
+            type: BigDecimal,
+            desc: 'Balance value in pnl currency.'
           }
         )
       end

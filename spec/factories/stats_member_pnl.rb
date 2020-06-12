@@ -2,10 +2,10 @@
 # frozen_string_literal: true
 
 FactoryBot.define do
-  factory :portfolio do
+  factory :stats_member_pnl do
     member { create(:member, :level_3) }
     currency_id { Currency.ids.sample }
-    portfolio_currency_id { Currency.ids.sample }
+    pnl_currency_id { Currency.ids.sample }
     total_credit { 0 }
     total_debit_fees { 0 }
     total_credit_fees { 0 }
