@@ -684,11 +684,14 @@ describe Jobs::Cron::StatsMemberPnl do
       expect(Jobs::Cron::StatsMemberPnl.parse_conversion_paths(nil)).to eq({})
       expect(Jobs::Cron::StatsMemberPnl.parse_conversion_paths('')).to eq({})
       expect(Jobs::Cron::StatsMemberPnl.parse_conversion_paths('usdt/abc:usdt/usd,usd/abc')).to eq(
-        'usdt/abc' => [%w[usdt usd], %w[usd abc]]
+        'usdt/abc' => [['usdt', 'usd', false], ['usd', 'abc', false]],
       )
       expect(Jobs::Cron::StatsMemberPnl.parse_conversion_paths('usdt/abc:usdt/usd,usd/abc;usdt/def:usdt/usd,def/abc,abc/usd')).to eq(
-        'usdt/abc' => [%w[usdt usd], %w[usd abc]],
-        'usdt/def' => [%w[usdt usd], %w[def abc], %w[abc usd]]
+        'usdt/abc' => [['usdt', 'usd', false], ['usd', 'abc', false]],
+        'usdt/def' => [['usdt', 'usd', false], ['def', 'abc', false], ['abc', 'usd', false]]
+      )
+      expect(Jobs::Cron::StatsMemberPnl.parse_conversion_paths('usdt/abc:_usd/usdt,usd/abc')).to eq(
+        'usdt/abc' => [['usd', 'usdt', true], ['usd', 'abc', false]],
       )
       expect { Jobs::Cron::StatsMemberPnl.parse_conversion_paths('usdt/abc,abc/usd') }.to raise_error(StandardError)
       expect { Jobs::Cron::StatsMemberPnl.parse_conversion_paths(':usdt/abc,abc/usd') }.to raise_error(StandardError)
@@ -708,11 +711,18 @@ describe Jobs::Cron::StatsMemberPnl do
       expect(Jobs::Cron::StatsMemberPnl.price_at('btc', 'usd', 0)).to eq(10_000)
     end
 
-    it do
+    it 'uses direct markets prices' do
       Jobs::Cron::StatsMemberPnl.stubs(:conversion_paths).returns(
-        'btc/abc' => [['btc', 'eth'], ['btc', 'usd']]
+        'btc/abc' => [['btc', 'eth', false], ['btc', 'usd', false]]
       )
       expect(Jobs::Cron::StatsMemberPnl.price_at('btc', 'abc', 0)).to eq(9500)
+    end
+
+    it 'reverses a market price' do
+      Jobs::Cron::StatsMemberPnl.stubs(:conversion_paths).returns(
+        'btc/abc' => [['btc', 'eth', true], ['btc', 'usd', false]]
+      )
+      expect(Jobs::Cron::StatsMemberPnl.price_at('btc', 'abc', 0)).to be_within(0.0001).of(10526.3157)
     end
   end
 end

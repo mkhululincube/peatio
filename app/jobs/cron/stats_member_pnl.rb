@@ -27,8 +27,12 @@ module Jobs::Cron
           paths[mid] = markets.split(',').map do |m|
             a, b = m.split('/')
             raise 'Failed to parse CONVERSION_PATHS' if a.to_s.empty? || b.to_s.empty?
-
-            [a, b]
+            reverse = false
+            if a.start_with?('_')
+              reverse = true
+              a = a[1..-1]
+            end
+            [a, b, reverse]
           end
         end
         paths
@@ -45,7 +49,13 @@ module Jobs::Cron
         return 1.0 if currency == pnl_currency
 
         if (path = conversion_paths["#{currency}/#{pnl_currency}"])
-          return path.map { |a, b| price_at(a, b, at) }.reduce(&:*)
+          return path.reduce(1) do |price, (a, b, reverse)|
+            if reverse
+              price / price_at(a, b, at)
+            else
+              price * price_at(a, b, at)
+            end
+          end
         end
 
         market = conversion_market(currency, pnl_currency)
