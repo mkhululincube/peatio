@@ -13,12 +13,18 @@ module API
         end
         get '/stats/pnl' do
           query = 'SELECT pnl_currency_id, currency_id, total_credit, total_debit, total_credit_value, total_debit_value, ' \
-                  'total_credit_value / total_credit `average_buy_price`, total_debit_value / total_debit `average_sell_price` ' \
-                  'FROM stats_member_pnl WHERE member_id = ? '
-          query += "AND pnl_currency_id = '#{params[:pnl_currency]}'" if params[:pnl_currency].present?
+                  'total_credit_value / total_credit `average_buy_price`, total_debit_value / total_debit `average_sell_price`, ' \
+                  'average_balance_price ' \
+                  'FROM stats_member_pnl WHERE member_id = ?'
+          conditions = [current_user.id]
 
-          sanitized_query = ActiveRecord::Base.sanitize_sql_for_conditions([query, current_user.id])
-          result = ActiveRecord::Base.connection.exec_query(sanitized_query).to_hash
+          if params[:pnl_currency].present?
+            query += ' AND pnl_currency_id = ?'
+            conditions << params[:pnl_currency]
+          end
+
+          squery = ActiveRecord::Base.sanitize_sql_for_conditions([query] + conditions)
+          result = ActiveRecord::Base.connection.exec_query(squery).to_hash
           present paginate(result.each(&:symbolize_keys!)), with: API::V2::Entities::Pnl
         end
       end

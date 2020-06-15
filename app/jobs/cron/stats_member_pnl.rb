@@ -259,18 +259,20 @@ module Jobs::Cron
       end
 
       def build_query(member_id, pnl_currency_id, currency_id, total_credit, total_credit_fees, total_credit_value, liability_id, total_debit, total_debit_value, total_debit_fees)
-        "INSERT INTO stats_member_pnl (member_id, pnl_currency_id, currency_id, total_credit, total_credit_fees, total_credit_value, last_liability_id, total_debit, total_debit_value, total_debit_fees, total_balance_value) " \
-        "VALUES (#{member_id},'#{pnl_currency_id}','#{currency_id}',#{total_credit},#{total_credit_fees},#{total_credit_value},#{liability_id},#{total_debit},#{total_debit_value},#{total_debit_fees},#{total_credit_value}) " \
-        "ON DUPLICATE KEY UPDATE " \
-        "total_credit = total_credit + VALUES(total_credit), " \
-        "total_credit_fees = total_credit_fees + VALUES(total_credit_fees), " \
-        "total_debit_fees = total_debit_fees + VALUES(total_debit_fees), " \
-        "total_credit_value = total_credit_value + VALUES(total_credit_value), " \
-        "total_debit_value = total_debit_value + VALUES(total_debit_value), " \
-        "total_debit = total_debit + VALUES(total_debit), " \
-        "total_balance_value = total_balance_value + VALUES(total_balance_value) - IF(total_credit = 0, 0, (#{total_debit+total_debit_fees}) * (total_credit_value / total_credit)), " \
-        "updated_at = NOW(), " \
-        "last_liability_id = VALUES(last_liability_id)"
+        average_balance_price = total_credit.zero? ? 0 : total_credit_value / total_credit
+        'INSERT INTO stats_member_pnl (member_id, pnl_currency_id, currency_id, total_credit, total_credit_fees, total_credit_value, last_liability_id, total_debit, total_debit_value, total_debit_fees, total_balance_value, average_balance_price) ' \
+        "VALUES (#{member_id},'#{pnl_currency_id}','#{currency_id}',#{total_credit},#{total_credit_fees},#{total_credit_value},#{liability_id},#{total_debit},#{total_debit_value},#{total_debit_fees},#{total_credit_value},#{average_balance_price}) " \
+        'ON DUPLICATE KEY UPDATE ' \
+        'total_balance_value = total_balance_value + VALUES(total_balance_value) - IF(VALUES(total_debit) = 0, 0, (VALUES(total_debit) + VALUES(total_debit_fees)) * average_balance_price), ' \
+        'average_balance_price = IF(VALUES(total_credit) = 0, average_balance_price, total_balance_value / (VALUES(total_credit) + total_credit - total_debit)), ' \
+        'total_credit = total_credit + VALUES(total_credit), ' \
+        'total_credit_fees = total_credit_fees + VALUES(total_credit_fees), ' \
+        'total_debit_fees = total_debit_fees + VALUES(total_debit_fees), ' \
+        'total_credit_value = total_credit_value + VALUES(total_credit_value), ' \
+        'total_debit_value = total_debit_value + VALUES(total_debit_value), ' \
+        'total_debit = total_debit + VALUES(total_debit), ' \
+        'updated_at = NOW(), ' \
+        'last_liability_id = VALUES(last_liability_id)'
       end
 
       def update_pnl(queries)

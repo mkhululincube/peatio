@@ -71,10 +71,10 @@ module API
         )
 
         expose(
-          :balance_value,
+          :average_balance_price,
           documentation: {
             type: BigDecimal,
-            desc: 'Balance value in pnl currency.'
+            desc: 'Average balance price.'
           }
         )
       end
