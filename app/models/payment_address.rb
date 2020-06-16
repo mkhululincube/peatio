@@ -3,8 +3,6 @@
 
 class PaymentAddress < ApplicationRecord
   include Vault::EncryptedModel
-  # include BelongsToCurrency
-  # include BelongsToAccount
 
   vault_lazy_decrypt!
 
@@ -35,9 +33,7 @@ class PaymentAddress < ApplicationRecord
   end
 
   def enqueue_address_generation
-    if currency.coin?
-      AMQP::Queue.enqueue(:deposit_coin_address, { member_id: member.id, wallet_id: wallet.id }, { persistent: true })
-    end
+    AMQP::Queue.enqueue(:deposit_coin_address, { member_id: member.id, wallet_id: wallet.id }, { persistent: true })
   end
 
   def format_address(format)
