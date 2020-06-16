@@ -33,7 +33,7 @@ class WalletService
         { address:                 w.address,
           balance:                 w.current_balance,
           max_balance:             w.max_balance,
-          min_collection_amount:   @wallet.currency.min_collection_amount,
+          min_collection_amount:   deposit.currency.min_collection_amount,
           skip_deposit_collection: w.service.skip_deposit_collection? }
       end
     raise StandardError, "destination wallets don't exist" if destination_wallets.blank?
@@ -144,8 +144,8 @@ class WalletService
       end
 
       transaction = Peatio::Transaction.new(to_address:  dw[:address],
-                                            amount:      amount_for_wallet,
-                                            currency_id: @wallet.currency_id)
+                                            amount:      amount_for_wallet.to_d,
+                                            currency_id: deposit.currency_id)
       transaction.status = :skipped if dw[:skip_deposit_collection]
       transaction
     rescue => e

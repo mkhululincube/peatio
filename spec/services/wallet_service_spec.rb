@@ -112,7 +112,7 @@ describe WalletService do
           [{ address: 'destination-wallet-1',
             balance: 8.8,
             max_balance: 10,
-            min_collection_amount: 1,
+            min_collection_amount: deposit.amount,
             skip_deposit_collection: true }]
         end
 
@@ -120,7 +120,7 @@ describe WalletService do
           []
         end
 
-        subject { service.send(:spread_between_wallets, amount, destination_wallets) }
+        subject { service.send(:spread_between_wallets, deposit, destination_wallets) }
 
         it 'returns empty spread' do
           expect(subject.map(&:as_json).map(&:symbolize_keys)).to contain_exactly(*expected_spread)
@@ -477,7 +477,7 @@ describe WalletService do
 
       context 'Partial spread between first, second and third + skip deposit collection option' do
 
-        let(:amount) { 10 }
+        let(:deposit) { Deposit.new(amount: 10, currency_id: :fake) }
 
         let(:destination_wallets) do
           [{ address: 'destination-wallet-1',
@@ -498,15 +498,15 @@ describe WalletService do
         let(:expected_spread) do
           [{ to_address: 'destination-wallet-2',
              status: 'pending',
-             amount: 3,
+             amount: '3.0',
              currency_id: currency.id },
            { to_address: 'destination-wallet-3',
              status: 'pending',
-             amount: 4,
+             amount: '4.0',
              currency_id: currency.id}]
         end
 
-        subject { service.send(:spread_between_wallets, amount, destination_wallets) }
+        subject { service.send(:spread_between_wallets, deposit, destination_wallets) }
 
         it 'spreads everything to last wallet' do
           expect(subject.map(&:as_json).map(&:symbolize_keys)).to contain_exactly(*expected_spread)
@@ -557,7 +557,7 @@ describe WalletService do
       end
 
       it 'skips warm wallet and spreads everything to cold wallet' do
-        expect(Wallet.active.withdraw.where(currency_id: deposit.currency_id).count).to eq 3
+        expect(Wallet.active.withdraw.joins(:currencies).where(currencies: { id: deposit.currency_id }).count).to eq 3
 
         expect(subject.map(&:as_json).map(&:symbolize_keys)).to contain_exactly(*expected_spread)
         expect(subject).to all(be_a(Peatio::Transaction))
