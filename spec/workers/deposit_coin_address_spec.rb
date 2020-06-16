@@ -64,7 +64,7 @@ describe Workers::AMQP::DepositCoinAddress do
       end
 
       it 'shouldnt create address' do
-        Workers::AMQP::DepositCoinAddress.new.process(account_id: account.id)
+        Workers::AMQP::DepositCoinAddress.new.process(member_id: member.id, wallet_id: wallet.id)
         expect(subject).to eq nil
         payment_address.reload
         expect(payment_address.as_json
