@@ -34,8 +34,8 @@ describe Jobs::Cron::StatsMemberPnl do
   context 'conversion_market' do
     it 'when there is no market' do
       expect do
-        Jobs::Cron::StatsMemberPnl.conversion_market('test1', 'test2')
-      end.to raise_error('There is no market test1/test2')
+        Jobs::Cron::StatsMemberPnl.conversion_market('test1', 'btc')
+      end.to raise_error('There is no market test1/btc')
     end
 
     it 'when market exists' do
@@ -102,7 +102,7 @@ describe Jobs::Cron::StatsMemberPnl do
         end
 
         it do
-          expect { Jobs::Cron::StatsMemberPnl.process_currency(trade_btceth.market.quote_unit) }.to change { StatsMemberPnl.count }.by(1)
+          expect { Jobs::Cron::StatsMemberPnl.process_currency(Currency.find(trade_btceth.market.quote_unit)) }.to change { StatsMemberPnl.count }.by(1)
 
           expect(StatsMemberPnl.last.member_id).to eq coin_withdraw.member_id
           expect(StatsMemberPnl.last.currency_id).to eq coin_withdraw.currency_id
@@ -137,7 +137,7 @@ describe Jobs::Cron::StatsMemberPnl do
         end
 
         it do
-          expect { Jobs::Cron::StatsMemberPnl.process_currency(trade_btceth.market.quote_unit) }.to change { StatsMemberPnl.count }.by(0)
+          expect { Jobs::Cron::StatsMemberPnl.process_currency(Currency.find(trade_btceth.market.quote_unit)) }.to change { StatsMemberPnl.count }.by(0)
 
           expect(StatsMemberPnl.last.member_id).to eq coin_withdraw.member_id
           expect(StatsMemberPnl.last.currency_id).to eq coin_withdraw.currency_id
@@ -168,7 +168,7 @@ describe Jobs::Cron::StatsMemberPnl do
         end
 
         it do
-          expect { Jobs::Cron::StatsMemberPnl.process_currency(trade_btceth.market.quote_unit) }.to change { StatsMemberPnl.count }.by(1)
+          expect { Jobs::Cron::StatsMemberPnl.process_currency(Currency.find(trade_btceth.market.quote_unit)) }.to change { StatsMemberPnl.count }.by(1)
           expect(StatsMemberPnl.last.member_id).to eq coin_deposit.member_id
           expect(StatsMemberPnl.last.currency_id).to eq coin_deposit.currency_id
           expect(StatsMemberPnl.last.pnl_currency_id).to eq trade_btceth.market.quote_unit
@@ -198,7 +198,7 @@ describe Jobs::Cron::StatsMemberPnl do
         end
 
         it do
-          expect { Jobs::Cron::StatsMemberPnl.process_currency(trade_btceth.market.quote_unit) }.to change { StatsMemberPnl.count }.by(2)
+          expect { Jobs::Cron::StatsMemberPnl.process_currency(Currency.find(trade_btceth.market.quote_unit)) }.to change { StatsMemberPnl.count }.by(2)
 
           expect(StatsMemberPnl.second.member_id).to eq coin_deposit.member_id
           expect(StatsMemberPnl.second.pnl_currency_id).to eq trade_btceth.market.quote_unit
@@ -242,7 +242,7 @@ describe Jobs::Cron::StatsMemberPnl do
         end
 
         it do
-          expect { Jobs::Cron::StatsMemberPnl.process_currency(trade_btceth.market.quote_unit) }.to change { StatsMemberPnl.count }.by(0)
+          expect { Jobs::Cron::StatsMemberPnl.process_currency(Currency.find(trade_btceth.market.quote_unit)) }.to change { StatsMemberPnl.count }.by(0)
           expect(StatsMemberPnl.last.member_id).to eq coin_deposit.member_id
           expect(StatsMemberPnl.last.pnl_currency_id).to eq trade_btceth.market.quote_unit
           expect(StatsMemberPnl.last.currency_id).to eq coin_deposit.currency_id
@@ -297,7 +297,7 @@ describe Jobs::Cron::StatsMemberPnl do
         end
 
         it do
-          expect { Jobs::Cron::StatsMemberPnl.process_currency(trade_btceth.market.quote_unit) }.to change { StatsMemberPnl.count }.by(0)
+          expect { Jobs::Cron::StatsMemberPnl.process_currency(Currency.find(trade_btceth.market.quote_unit)) }.to change { StatsMemberPnl.count }.by(0)
 
           total_fees = trade.total * trade.order_fee(trade.maker_order)
           expect(StatsMemberPnl.all[0].member_id).to eq trade.maker_order.member.id
@@ -359,7 +359,7 @@ describe Jobs::Cron::StatsMemberPnl do
         end
 
         it do
-          expect { Jobs::Cron::StatsMemberPnl.process_currency(trade_btceth.market.quote_unit) }.to change { StatsMemberPnl.count }.by(4)
+          expect { Jobs::Cron::StatsMemberPnl.process_currency(Currency.find(trade_btceth.market.quote_unit)) }.to change { StatsMemberPnl.count }.by(4)
 
           total_fees = trade.total * trade.order_fee(trade.maker_order)
           expect(StatsMemberPnl.all[1].member_id).to eq trade.maker_order.member.id
@@ -409,7 +409,7 @@ describe Jobs::Cron::StatsMemberPnl do
 
   context 'process' do
     before do
-      Jobs::Cron::StatsMemberPnl.stubs(:pnl_currencies).returns([Market.first.quote_unit, Market.second.quote_unit])
+      Jobs::Cron::StatsMemberPnl.stubs(:pnl_currencies).returns([Market.first.quote_unit, Market.second.quote_unit].map{|id| Currency.find(id)})
     end
 
     context 'no liabilities' do
@@ -458,7 +458,7 @@ describe Jobs::Cron::StatsMemberPnl do
 
   context 'scenario1_internal_sell' do
     before do
-      Jobs::Cron::StatsMemberPnl.stubs(:pnl_currencies).returns(['usd'])
+      Jobs::Cron::StatsMemberPnl.stubs(:pnl_currencies).returns([Currency.find('usd')])
     end
 
     def scenario1_internal_sell_with_partial_refund
@@ -687,7 +687,7 @@ describe Jobs::Cron::StatsMemberPnl do
       expect(mbtc.total_credit_value).to be_within(0.0001).of(100)
       expect(mbtc.total_debit_value).to eq(0)
       expect(mbtc.total_balance_value).to be_within(0.0001).of(100)
-      expect(mbtc.average_balance_price).to be_within(0.00001).of(1111.11111)
+      expect(mbtc.average_balance_price).to be_within(0.01).of(1111.11)
     end
   end
 

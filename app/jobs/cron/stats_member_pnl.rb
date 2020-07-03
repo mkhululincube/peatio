@@ -38,17 +38,17 @@ module Jobs::Cron
         paths
       end
 
-      def conversion_market(currency_id, pnl_currency)
-        market = Market.find_by(base_unit: currency_id, quote_unit: pnl_currency.id)
-        raise Error, "There is no market #{currency_id}/#{pnl_currency.id}" unless market.present?
+      def conversion_market(currency_id, pnl_currency_id)
+        market = Market.find_by(base_unit: currency_id, quote_unit: pnl_currency_id)
+        raise Error, "There is no market #{currency_id}/#{pnl_currency_id}" unless market.present?
 
         market.id
       end
 
-      def price_at(currency_id, pnl_currency, at)
-        return 1.0 if currency_id == pnl_currency.id
+      def price_at(currency_id, pnl_currency_id, at)
+        return 1.0 if currency_id == pnl_currency_id
 
-        if (path = conversion_paths["#{currency_id}/#{pnl_currency.id}"])
+        if (path = conversion_paths["#{currency_id}/#{pnl_currency_id}"])
           return path.reduce(1) do |price, (a, b, reverse)|
             if reverse
               price / price_at(a, b, at)
@@ -58,7 +58,7 @@ module Jobs::Cron
           end
         end
 
-        market = conversion_market(currency_id, pnl_currency)
+        market = conversion_market(currency_id, pnl_currency_id)
         nearest_trade = Trade.nearest_trade_from_influx(market, at)
         Rails.logger.debug { "Nearest trade on #{market} trade: #{nearest_trade}" }
         raise Error, "There is no trades on market #{market}" unless nearest_trade.present?
@@ -89,11 +89,11 @@ module Jobs::Cron
           queries << build_query(order.member_id, pnl_currency, outcome_currency_id, 0, 0, 0, liability_id, total_debit, total_debit_value, 0)
         else
           income_currency_id = order.income_currency.id
-          total_credit_value = (total_credit) * price_at(income_currency_id, pnl_currency, trade.created_at)
+          total_credit_value = (total_credit) * price_at(income_currency_id, pnl_currency.id, trade.created_at)
           queries << build_query(order.member_id, pnl_currency, income_currency_id, total_credit, total_credit_fees, total_credit_value, liability_id, 0, 0, 0)
 
           outcome_currency_id = order.outcome_currency.id
-          total_debit_value = (total_debit) * price_at(outcome_currency_id, pnl_currency, trade.created_at)
+          total_debit_value = (total_debit) * price_at(outcome_currency_id, pnl_currency.id, trade.created_at)
           queries << build_query(order.member_id, pnl_currency, outcome_currency_id, 0, 0, 0, liability_id, total_debit, total_debit_value, 0)
         end
 
@@ -103,7 +103,7 @@ module Jobs::Cron
       def process_adjustment(pnl_currency, liability_id, adjustment)
         Rails.logger.info { "Process adjustment: #{adjustment.id}" }
         total_credit = adjustment.amount
-        total_credit_value = total_credit * price_at(adjustment.currency_id, pnl_currency, adjustment.created_at)
+        total_credit_value = total_credit * price_at(adjustment.currency_id, pnl_currency.id, adjustment.created_at)
         account_number_hash = Operations.split_account_number(account_number: adjustment.receiving_account_number)
         member = Member.find_by(uid: account_number_hash[:member_uid]) if account_number_hash.key?(:member_uid)
         build_query(member.id, pnl_currency, adjustment.currency_id, total_credit, 0.0, total_credit_value, liability_id, 0, 0, 0)
@@ -113,7 +113,7 @@ module Jobs::Cron
         Rails.logger.info { "Process deposit: #{deposit.id}" }
         total_credit = deposit.amount
         total_credit_fees = deposit.fee
-        total_credit_value = total_credit * price_at(deposit.currency_id, pnl_currency, deposit.created_at)
+        total_credit_value = total_credit * price_at(deposit.currency_id, pnl_currency.id, deposit.created_at)
         build_query(deposit.member_id, pnl_currency, deposit.currency_id, total_credit, total_credit_fees, total_credit_value, liability_id, 0, 0, 0)
       end
 
@@ -121,7 +121,7 @@ module Jobs::Cron
         Rails.logger.info { "Process withdraw: #{withdraw.id}" }
         total_debit = withdraw.amount
         total_debit_fees = withdraw.fee
-        total_debit_value = (total_debit + total_debit_fees) * price_at(withdraw.currency_id, pnl_currency, withdraw.created_at)
+        total_debit_value = (total_debit + total_debit_fees) * price_at(withdraw.currency_id, pnl_currency.id, withdraw.created_at)
 
         build_query(withdraw.member_id, pnl_currency, withdraw.currency_id, 0, 0, 0, liability_id, total_debit, total_debit_value, total_debit_fees)
       end
@@ -153,7 +153,6 @@ module Jobs::Cron
           .each do |liability|
             l_count += 1
             Rails.logger.info { "Process liability: #{liability['id']}" }
-
             case liability['reference_type']
               when 'Adjustment'
                 adjustment = Adjustment.find(liability['reference_id'])
@@ -170,7 +169,6 @@ module Jobs::Cron
                 queries << process_withdraw(pnl_currency, liability['id'], withdraw)
             end
         end
-
         transfers = {}
         liabilities = ActiveRecord::Base.connection
         .select_all("SELECT MAX(id) id, currency_id, member_id, reference_type, reference_id, SUM(credit-debit) as total FROM liabilities "\

@@ -289,6 +289,7 @@ ActiveRecord::Schema.define(version: 2020_05_27_130534) do
     t.decimal "total_credit_value", precision: 32, scale: 16, default: "0.0"
     t.decimal "total_debit_value", precision: 32, scale: 16, default: "0.0"
     t.decimal "total_balance_value", precision: 32, scale: 16, default: "0.0"
+    t.decimal "average_balance_price", precision: 32, scale: 16, default: "0.0"
     t.bigint "last_liability_id"
     t.datetime "created_at", default: -> { "current_timestamp()" }, null: false
     t.datetime "updated_at", default: -> { "current_timestamp()" }, null: false
