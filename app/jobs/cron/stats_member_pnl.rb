@@ -4,12 +4,12 @@ module Jobs::Cron
 
     class <<self
       def max_liability(pnl_currency)
-        res = ::StatsMemberPnl.where(pnl_currency_id: pnl_currency).maximum('last_liability_id')
+        res = ::StatsMemberPnl.where(pnl_currency_id: pnl_currency.id).maximum('last_liability_id')
         res.present? ? res : 0
       end
 
       def pnl_currencies
-        @pnl_currencies ||= ENV.fetch('PNL_CURRENCIES', '').split(',')
+        @pnl_currencies ||= ENV.fetch('PNL_CURRENCIES', '').split(',').map {|id| Currency.find(id) }
       end
 
       def conversion_paths
@@ -38,17 +38,17 @@ module Jobs::Cron
         paths
       end
 
-      def conversion_market(currency, pnl_currency)
-        market = Market.find_by(base_unit: currency, quote_unit: pnl_currency)
-        raise Error, "There is no market #{currency}/#{pnl_currency}" unless market.present?
+      def conversion_market(currency_id, pnl_currency)
+        market = Market.find_by(base_unit: currency_id, quote_unit: pnl_currency.id)
+        raise Error, "There is no market #{currency_id}/#{pnl_currency.id}" unless market.present?
 
         market.id
       end
 
-      def price_at(currency, pnl_currency, at)
-        return 1.0 if currency == pnl_currency
+      def price_at(currency_id, pnl_currency, at)
+        return 1.0 if currency_id == pnl_currency.id
 
-        if (path = conversion_paths["#{currency}/#{pnl_currency}"])
+        if (path = conversion_paths["#{currency_id}/#{pnl_currency.id}"])
           return path.reduce(1) do |price, (a, b, reverse)|
             if reverse
               price / price_at(a, b, at)
@@ -58,7 +58,7 @@ module Jobs::Cron
           end
         end
 
-        market = conversion_market(currency, pnl_currency)
+        market = conversion_market(currency_id, pnl_currency)
         nearest_trade = Trade.nearest_trade_from_influx(market, at)
         Rails.logger.debug { "Nearest trade on #{market} trade: #{nearest_trade}" }
         raise Error, "There is no trades on market #{market}" unless nearest_trade.present?
@@ -79,7 +79,7 @@ module Jobs::Cron
           total_debit = trade.amount
         end
 
-        if trade.market.quote_unit == pnl_currency
+        if trade.market.quote_unit == pnl_currency.id
           income_currency_id = order.income_currency.id
           order.side == 'buy' ? total_credit_value = total_credit * trade.price : total_credit_value = total_credit
           queries << build_query(order.member_id, pnl_currency, income_currency_id, total_credit, total_credit_fees, total_credit_value, liability_id, 0, 0, 0)
@@ -130,10 +130,9 @@ module Jobs::Cron
         l_count = 0
         pnl_currencies.each do |pnl_currency|
           begin
-            @currency = Currency.find(pnl_currency)
             l_count += process_currency(pnl_currency)
           rescue StandardError => e
-            Rails.logger.error("Failed to process currency #{pnl_currency}: #{e}: #{e.backtrace.join("\n")}")
+            Rails.logger.error("Failed to process currency #{pnl_currency.id}: #{e}: #{e.backtrace.join("\n")}")
           end
         end
 
@@ -150,7 +149,7 @@ module Jobs::Cron
                       "FROM liabilities WHERE id > #{liability_pointer} " \
                       "AND ((reference_type IN ('Trade','Deposit','Adjustment') AND code IN (201,202)) " \
                       "OR (reference_type IN ('Withdraw') AND code IN (211,212))) " \
-                      "GROUP BY reference_id ORDER BY MAX(id) ASC LIMIT 1")
+                      "GROUP BY reference_id ORDER BY MAX(id) ASC LIMIT 1000")
           .each do |liability|
             l_count += 1
             Rails.logger.info { "Process liability: #{liability['id']}" }
@@ -242,9 +241,9 @@ module Jobs::Cron
             store.each do |member_id, stats|
               a, b = stats.keys
 
-              if a == pnl_currency
+              if a == pnl_currency.id
                 b, a = stats.keys
-              elsif b != pnl_currency
+              elsif b != pnl_currency.id
                 raise 'Need direct conversion for transfers'
               end
               next if stats[b][:total_amount].zero?
@@ -271,13 +270,13 @@ module Jobs::Cron
         l_count
       end
 
-      def build_query(member_id, pnl_currency_id, currency_id, total_credit, total_credit_fees, total_credit_value, liability_id, total_debit, total_debit_value, total_debit_fees)
-        average_balance_price = total_credit.zero? ? 0 : (total_credit_value / total_credit).round(@currency.precision)
+      def build_query(member_id, pnl_currency, currency_id, total_credit, total_credit_fees, total_credit_value, liability_id, total_debit, total_debit_value, total_debit_fees)
+        average_balance_price = total_credit.zero? ? 0 : (total_credit_value / total_credit).round(pnl_currency.precision)
         'INSERT INTO stats_member_pnl (member_id, pnl_currency_id, currency_id, total_credit, total_credit_fees, total_credit_value, last_liability_id, total_debit, total_debit_value, total_debit_fees, total_balance_value, average_balance_price) ' \
-        "VALUES (#{member_id},'#{pnl_currency_id}','#{currency_id}',#{total_credit},#{total_credit_fees},#{total_credit_value},#{liability_id},#{total_debit},#{total_debit_value},#{total_debit_fees},#{total_credit_value},#{average_balance_price}) " \
+        "VALUES (#{member_id},'#{pnl_currency.id}','#{currency_id}',#{total_credit},#{total_credit_fees},#{total_credit_value},#{liability_id},#{total_debit},#{total_debit_value},#{total_debit_fees},#{total_credit_value},#{average_balance_price}) " \
         'ON DUPLICATE KEY UPDATE ' \
         'total_balance_value = total_balance_value + VALUES(total_balance_value) - IF(VALUES(total_debit) = 0, 0, (VALUES(total_debit) + VALUES(total_debit_fees)) * average_balance_price), ' \
-        "average_balance_price = IF(VALUES(total_credit) = 0, average_balance_price, ROUND(total_balance_value / (VALUES(total_credit) + total_credit - total_debit), #{@currency.precision})), " \
+        "average_balance_price = IF(VALUES(total_credit) = 0, average_balance_price, ROUND(total_balance_value / (VALUES(total_credit) + total_credit - total_debit), #{pnl_currency.precision})), " \
         'total_credit = total_credit + VALUES(total_credit), ' \
         'total_credit_fees = total_credit_fees + VALUES(total_credit_fees), ' \
         'total_debit_fees = total_debit_fees + VALUES(total_debit_fees), ' \
