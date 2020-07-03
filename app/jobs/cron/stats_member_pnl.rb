@@ -150,7 +150,7 @@ module Jobs::Cron
                       "FROM liabilities WHERE id > #{liability_pointer} AND id < #{liability_pointer + 10*batch_size} " \
                       "AND ((reference_type IN ('Trade','Deposit','Adjustment') AND code IN (201,202)) " \
                       "OR (reference_type IN ('Withdraw') AND code IN (211,212))) " \
-                      "GROUP BY reference_type, reference_id ORDER BY MAX(id) ASC LIMIT #{batch_size}")
+                      "GROUP BY reference_type, reference_id ORDER BY MAX(id) ASC LIMIT 1")
           .each do |liability|
             l_count += 1
             Rails.logger.info { "Process liability: #{liability['id']}" }
