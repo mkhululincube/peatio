@@ -100,6 +100,15 @@ module Jobs::Cron
         queries
       end
 
+      def process_adjustment(pnl_currency, liability_id, adjustment)
+        Rails.logger.info { "Process adjustment: #{adjustment.id}" }
+        total_credit = adjustment.amount
+        total_credit_value = total_credit * price_at(adjustment.currency_id, pnl_currency, adjustment.created_at)
+        account_number_hash = Operations.split_account_number(account_number: adjustment.receiving_account_number)
+        member = Member.find_by(uid: account_number_hash[:member_uid]) if account_number_hash.key?(:member_uid)
+        build_query(member.id, pnl_currency, adjustment.currency_id, total_credit, 0.0, total_credit_value, liability_id, 0, 0, 0)
+      end
+
       def process_deposit(pnl_currency, liability_id, deposit)
         Rails.logger.info { "Process deposit: #{deposit.id}" }
         total_credit = deposit.amount
@@ -121,6 +130,7 @@ module Jobs::Cron
         l_count = 0
         pnl_currencies.each do |pnl_currency|
           begin
+            @currency = Currency.find(pnl_currency)
             l_count += process_currency(pnl_currency)
           rescue StandardError => e
             Rails.logger.error("Failed to process currency #{pnl_currency}: #{e}: #{e.backtrace.join("\n")}")
@@ -140,12 +150,15 @@ module Jobs::Cron
                       "FROM liabilities WHERE id > #{liability_pointer} " \
                       "AND ((reference_type IN ('Trade','Deposit','Adjustment') AND code IN (201,202)) " \
                       "OR (reference_type IN ('Withdraw') AND code IN (211,212))) " \
-                      "GROUP BY reference_id ORDER BY MAX(id) ASC LIMIT 10000")
+                      "GROUP BY reference_id ORDER BY MAX(id) ASC LIMIT 1")
           .each do |liability|
             l_count += 1
             Rails.logger.info { "Process liability: #{liability['id']}" }
 
             case liability['reference_type']
+              when 'Adjustment'
+                adjustment = Adjustment.find(liability['reference_id'])
+                queries << process_adjustment(pnl_currency, liability['id'], adjustment)
               when 'Deposit'
                 deposit = Deposit.find(liability['reference_id'])
                 queries << process_deposit(pnl_currency, liability['id'], deposit)
@@ -259,12 +272,12 @@ module Jobs::Cron
       end
 
       def build_query(member_id, pnl_currency_id, currency_id, total_credit, total_credit_fees, total_credit_value, liability_id, total_debit, total_debit_value, total_debit_fees)
-        average_balance_price = total_credit.zero? ? 0 : total_credit_value / total_credit
+        average_balance_price = total_credit.zero? ? 0 : (total_credit_value / total_credit).round(@currency.precision)
         'INSERT INTO stats_member_pnl (member_id, pnl_currency_id, currency_id, total_credit, total_credit_fees, total_credit_value, last_liability_id, total_debit, total_debit_value, total_debit_fees, total_balance_value, average_balance_price) ' \
         "VALUES (#{member_id},'#{pnl_currency_id}','#{currency_id}',#{total_credit},#{total_credit_fees},#{total_credit_value},#{liability_id},#{total_debit},#{total_debit_value},#{total_debit_fees},#{total_credit_value},#{average_balance_price}) " \
         'ON DUPLICATE KEY UPDATE ' \
         'total_balance_value = total_balance_value + VALUES(total_balance_value) - IF(VALUES(total_debit) = 0, 0, (VALUES(total_debit) + VALUES(total_debit_fees)) * average_balance_price), ' \
-        'average_balance_price = IF(VALUES(total_credit) = 0, average_balance_price, total_balance_value / (VALUES(total_credit) + total_credit - total_debit)), ' \
+        "average_balance_price = IF(VALUES(total_credit) = 0, average_balance_price, ROUND(total_balance_value / (VALUES(total_credit) + total_credit - total_debit), #{@currency.precision})), " \
         'total_credit = total_credit + VALUES(total_credit), ' \
         'total_credit_fees = total_credit_fees + VALUES(total_credit_fees), ' \
         'total_debit_fees = total_debit_fees + VALUES(total_debit_fees), ' \
