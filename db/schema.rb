@@ -278,7 +278,7 @@ ActiveRecord::Schema.define(version: 2020_07_03_142432) do
     t.index ["reference_type", "reference_id"], name: "index_revenues_on_reference_type_and_reference_id"
   end
 
-  create_table "stats_member_pnls", options: "ENGINE=InnoDB DEFAULT CHARSET=utf8", force: :cascade do |t|
+  create_table "stats_member_pnl", options: "ENGINE=InnoDB DEFAULT CHARSET=utf8", force: :cascade do |t|
     t.integer "member_id", null: false
     t.string "pnl_currency_id", limit: 10, null: false
     t.string "currency_id", limit: 10, null: false
@@ -293,7 +293,7 @@ ActiveRecord::Schema.define(version: 2020_07_03_142432) do
     t.bigint "last_liability_id"
     t.datetime "created_at", default: -> { "CURRENT_TIMESTAMP" }, null: false
     t.datetime "updated_at", default: -> { "CURRENT_TIMESTAMP" }, null: false
-    t.index ["last_liability_id"], name: "index_stats_member_pnls_on_last_liability_id"
+    t.index ["last_liability_id"], name: "index_stats_member_pnl_on_last_liability_id"
     t.index ["pnl_currency_id", "currency_id", "member_id"], name: "index_currency_ids_and_member_id", unique: true
   end
 

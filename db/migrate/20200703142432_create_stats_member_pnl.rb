@@ -2,7 +2,7 @@
 
 class CreateStatsMemberPnl < ActiveRecord::Migration[5.2]
   def change
-    create_table :stats_member_pnls do |t|
+    create_table :stats_member_pnl do |t|
       t.integer :member_id, null: false
       t.string :pnl_currency_id, limit: 10, null: false
       t.string :currency_id,           limit: 10, null: false
