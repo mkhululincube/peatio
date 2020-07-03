@@ -149,7 +149,7 @@ module Jobs::Cron
                       "FROM liabilities WHERE id > #{liability_pointer} " \
                       "AND ((reference_type IN ('Trade','Deposit','Adjustment') AND code IN (201,202)) " \
                       "OR (reference_type IN ('Withdraw') AND code IN (211,212))) " \
-                      "GROUP BY reference_id ORDER BY MAX(id) ASC LIMIT 1000")
+                      "GROUP BY reference_id ORDER BY MAX(id) ASC LIMIT 1")
           .each do |liability|
             l_count += 1
             Rails.logger.info { "Process liability: #{liability['id']}" }
@@ -269,12 +269,12 @@ module Jobs::Cron
       end
 
       def build_query(member_id, pnl_currency, currency_id, total_credit, total_credit_fees, total_credit_value, liability_id, total_debit, total_debit_value, total_debit_fees)
-        average_balance_price = total_credit.zero? ? 0 : (total_credit_value / total_credit).round(pnl_currency.precision)
+        average_balance_price = total_credit.zero? ? 0 : (total_credit_value / total_credit)
         'INSERT INTO stats_member_pnl (member_id, pnl_currency_id, currency_id, total_credit, total_credit_fees, total_credit_value, last_liability_id, total_debit, total_debit_value, total_debit_fees, total_balance_value, average_balance_price) ' \
         "VALUES (#{member_id},'#{pnl_currency.id}','#{currency_id}',#{total_credit},#{total_credit_fees},#{total_credit_value},#{liability_id},#{total_debit},#{total_debit_value},#{total_debit_fees},#{total_credit_value},#{average_balance_price}) " \
         'ON DUPLICATE KEY UPDATE ' \
         'total_balance_value = total_balance_value + VALUES(total_balance_value) - IF(VALUES(total_debit) = 0, 0, (VALUES(total_debit) + VALUES(total_debit_fees)) * average_balance_price), ' \
-        "average_balance_price = IF(VALUES(total_credit) = 0, average_balance_price, ROUND(total_balance_value / (VALUES(total_credit) + total_credit - total_debit), #{pnl_currency.precision})), " \
+        "average_balance_price = IF(VALUES(total_credit) = 0, average_balance_price, total_balance_value / (VALUES(total_credit) + total_credit - total_debit)), " \
         'total_credit = total_credit + VALUES(total_credit), ' \
         'total_credit_fees = total_credit_fees + VALUES(total_credit_fees), ' \
         'total_debit_fees = total_debit_fees + VALUES(total_debit_fees), ' \
