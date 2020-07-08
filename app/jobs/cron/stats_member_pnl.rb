@@ -102,11 +102,18 @@ module Jobs::Cron
 
       def process_adjustment(pnl_currency, liability_id, adjustment)
         Rails.logger.info { "Process adjustment: #{adjustment.id}" }
-        total_credit = adjustment.amount
-        total_credit_value = total_credit * price_at(adjustment.currency_id, pnl_currency.id, adjustment.created_at)
+        if adjustment.amount < 0
+          total_credit = total_credit_value = 0
+          total_debit = -adjustment.amount
+          total_debit_value = total_debit * price_at(adjustment.currency_id, pnl_currency.id, adjustment.created_at)
+        else
+          total_debit = total_debit_value = 0
+          total_credit = adjustment.amount
+          total_credit_value = total_credit * price_at(adjustment.currency_id, pnl_currency.id, adjustment.created_at)
+        end
         account_number_hash = Operations.split_account_number(account_number: adjustment.receiving_account_number)
         member = Member.find_by(uid: account_number_hash[:member_uid]) if account_number_hash.key?(:member_uid)
-        build_query(member.id, pnl_currency, adjustment.currency_id, total_credit, 0.0, total_credit_value, liability_id, 0, 0, 0)
+        build_query(member.id, pnl_currency, adjustment.currency_id, total_credit, 0.0, total_credit_value, liability_id, total_debit, total_debit_value, 0)
       end
 
       def process_deposit(pnl_currency, liability_id, deposit)
@@ -147,13 +154,13 @@ module Jobs::Cron
         # We use MIN function here instead of ANY_VALUE to be compatible with many MySQL versions
         ActiveRecord::Base.connection
           .select_all("SELECT MAX(id) id, MIN(reference_type) reference_type, MIN(reference_id) reference_id " \
-                      "FROM liabilities WHERE id > #{liability_pointer} AND id < #{liability_pointer + 10*batch_size} " \
+                      "FROM liabilities WHERE id > #{liability_pointer} " \
                       "AND ((reference_type IN ('Trade','Deposit','Adjustment') AND code IN (201,202)) " \
                       "OR (reference_type IN ('Withdraw') AND code IN (211,212))) " \
-                      "GROUP BY reference_type, reference_id ORDER BY MAX(id) ASC LIMIT 1")
+                      "GROUP BY reference_type, reference_id ORDER BY MAX(id) ASC LIMIT #{batch_size}")
           .each do |liability|
             l_count += 1
-            Rails.logger.info { "Process liability: #{liability['id']}" }
+            Rails.logger.info { "Process liability: #{liability['id']} (#{liability['reference_type']})" }
             case liability['reference_type']
               when 'Adjustment'
                 adjustment = Adjustment.find(liability['reference_id'])
