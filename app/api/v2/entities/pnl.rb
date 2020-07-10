@@ -77,6 +77,14 @@ module API
             desc: 'Average balance price.'
           }
         )
+
+        expose(
+          :total_balance_value,
+          documentation: {
+            type: BigDecimal,
+            desc: 'Total balance value in pnl currency.'
+          }
+        )
       end
     end
   end

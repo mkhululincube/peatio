@@ -14,7 +14,7 @@ module API
         get '/stats/pnl' do
           query = 'SELECT pnl_currency_id, currency_id, total_credit, total_debit, total_credit_value, total_debit_value, ' \
                   'total_credit_value / total_credit `average_buy_price`, total_debit_value / total_debit `average_sell_price`, ' \
-                  'average_balance_price ' \
+                  'average_balance_price, total_balance_value ' \
                   'FROM stats_member_pnl WHERE member_id = ?'
           conditions = [current_user.id]
 
